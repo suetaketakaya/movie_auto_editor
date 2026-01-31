@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Auto-FPS-Clipper - AI ハイライト動画生成</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🎮 Auto-FPS-Clipper</h1>
+            <p class="subtitle">AI-Powered FPS Game Highlight Generator</p>
+        </header>
+
+        <main>
+            <!-- Upload Section -->
+            <section class="upload-section" id="uploadSection">
+                <div class="upload-area" id="uploadArea">
+                    <div class="upload-icon">📁</div>
+                    <h2>動画ファイルをドラッグ＆ドロップ</h2>
+                    <p>または</p>
+                    <label for="fileInput" class="btn btn-primary" style="cursor: pointer; user-select: none;">ファイルを選択</label>
+                    <input type="file" id="fileInput" accept=".mp4,.mkv,.avi,.mov" hidden>
+                    <p class="file-info">対応形式: MP4, MKV, AVI, MOV (最大20GB)</p>
+                </div>
+
+                <div class="selected-file" id="selectedFile" style="display: none;">
+                    <div class="file-details">
+                        <div class="file-icon">🎬</div>
+                        <div class="file-name" id="fileName"></div>
+                        <div class="file-size" id="fileSize"></div>
+                    </div>
+                    <button class="btn btn-success" id="uploadBtn">アップロード開始</button>
+                    <button class="btn btn-secondary" id="cancelBtn">キャンセル</button>
+                </div>
+            </section>
+
+            <!-- Processing Section -->
+            <section class="processing-section" id="processingSection" style="display: none;">
+                <h2>処理中...</h2>
+
+                <div class="progress-container">
+                    <div class="progress-bar">
+                        <div class="progress-fill" id="progressFill"></div>
+                    </div>
+                    <div class="progress-text" id="progressText">0%</div>
+                </div>
+
+                <div class="status-message" id="statusMessage">
+                    準備中...
+                </div>
+
+                <div class="processing-steps">
+                    <div class="step" id="step1">
+                        <div class="step-icon">⏳</div>
+                        <div class="step-text">フレーム抽出</div>
+                    </div>
+                    <div class="step" id="step2">
+                        <div class="step-icon">⏳</div>
+                        <div class="step-text">AI解析</div>
+                    </div>
+                    <div class="step" id="step3">
+                        <div class="step-icon">⏳</div>
+                        <div class="step-text">ハイライト検出</div>
+                    </div>
+                    <div class="step" id="step4">
+                        <div class="step-icon">⏳</div>
+                        <div class="step-text">動画生成</div>
+                    </div>
+                </div>
+
+                <div class="log-container">
+                    <h3>処理ログ</h3>
+                    <div class="log-output" id="logOutput"></div>
+                </div>
+            </section>
+
+            <!-- Result Section -->
+            <section class="result-section" id="resultSection" style="display: none;">
+                <h2>✅ 処理完了！</h2>
+
+                <div class="result-info">
+                    <p>ハイライト動画が生成されました</p>
+                    <div class="result-stats" id="resultStats"></div>
+                </div>
+
+                <div class="result-actions">
+                    <button class="btn btn-success btn-large" id="downloadBtn">
+                        📥 ダウンロード
+                    </button>
+                    <button class="btn btn-primary" id="newUploadBtn">
+                        🔄 新しい動画を処理
+                    </button>
+                </div>
+
+                <div class="video-preview" id="videoPreview">
+                    <!-- Video player will be inserted here -->
+                </div>
+            </section>
+
+            <!-- Error Section -->
+            <section class="error-section" id="errorSection" style="display: none;">
+                <h2>❌ エラーが発生しました</h2>
+                <div class="error-message" id="errorMessage"></div>
+                <button class="btn btn-primary" id="retryBtn">もう一度試す</button>
+            </section>
+        </main>
+
+        <footer>
+            <p>Powered by Ollama Vision AI & FFmpeg</p>
+            <p class="version">v1.0.0</p>
+        </footer>
+    </div>
+
+    <script src="/static/js/main.js"></script>
+</body>
+</html>

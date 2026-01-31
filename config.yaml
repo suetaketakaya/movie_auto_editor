@@ -1,0 +1,329 @@
+# Auto-FPS-Clipper Configuration
+
+# Ollama Settings
+ollama:
+  base_url: "http://localhost:11434"
+  vision_model: "qwen2-vl:7b"  # qwen2-vl:7b (推奨), llama3.2-vision, llava:13b
+  thinking_model: "qwen2-vl:7b"  # Using same model for thinking
+  timeout: 240
+  use_llamacpp: false  # Set to true to use llama.cpp backend
+
+# 複数モデル併用設定 (高精度モード)
+multi_model:
+  enable: true  # 複数モデル併用を有効化
+  strategy: "confidence"  # ensemble (投票), confidence (信頼度ベース), specialized (専門化)
+  models:
+    - "qwen2-vl:7b"      # プライマリ: 最高精度
+    - "llama3.2-vision"  # セカンダリ: フォールバック
+    - "llava:13b"        # ターシャリ: 追加検証
+  confidence_threshold: 0.7  # この値以下で追加モデル使用
+  parallel_processing: true  # 並列処理 (アンサンブル時のみ)
+
+# Video Processing Settings
+video:
+  input_dir: "D:/公開動画/素材"
+  output_dir: "./output"
+  frames_dir: "./frames"
+  sample_interval: 2  # seconds between frame captures
+
+# Frame Extraction Settings
+frame_extraction:
+  interval_seconds: 2
+  quality: 95  # JPEG quality (0-100)
+  max_frames: 2000  # Maximum frames to extract per video
+
+# Audio Analysis Settings
+audio:
+  enable: true
+  model: "base"  # Whisper model: tiny, base, small, medium, large
+  trigger_keywords:
+    - "銃声"
+    - "連続"
+    - "キル"
+  intensity_window: 5  # seconds before/after audio trigger
+
+# AI Analysis Settings
+ai_analysis:
+  detect_kill_log: true
+  detect_match_status: true
+  detect_action_intensity: true
+  confidence_threshold: 0.7
+
+# Video Export Settings
+export:
+  codec: "libx264"  # or libx265 for HEVC
+  crf: 18  # Quality (lower = better, 18 is high quality)
+  preset: "slow"  # ultrafast, fast, medium, slow, veryslow
+  maintain_fps: true
+  maintain_resolution: true
+
+# Crop Settings (for 9:16 short videos)
+crop:
+  enable: false
+  aspect_ratio: "9:16"
+  position: "center"  # center, top, bottom
+
+# Web Server Settings
+web:
+  host: "0.0.0.0"
+  port: 8000
+  max_upload_size_mb: 20000  # 20GB
+  allowed_extensions:
+    - ".mp4"
+    - ".mkv"
+    - ".avi"
+    - ".mov"
+
+# Logging
+logging:
+  level: "INFO"  # DEBUG, INFO, WARNING, ERROR
+  file: "./logs/app.log"
+
+# === 新機能設定 ===
+
+# 視覚エフェクト設定
+effects:
+  enable: true
+  transition:
+    enable: true
+    type: "fade"  # fade, wipeleft, wiperight, slideleft, slideright
+    duration: 0.5  # 秒
+  slow_motion:
+    enable: true
+    speed: 0.5  # 0.5 = 半分の速度
+    apply_to_kills: true  # キルシーンに自動適用
+  zoom:
+    enable: false
+    factor: 1.5
+  color_grading:
+    enable: true
+    preset: "cinematic"  # cinematic, vibrant, warm, cool, desaturated
+  vignette:
+    enable: true
+    intensity: 0.3
+
+# テキストオーバーレイ設定
+text_overlay:
+  enable: true
+  kill_counter:
+    enable: true
+    font_size: 48
+    color: "white"
+    position: "top_center"
+  kill_popups:
+    enable: true
+    show_double_kill: true
+    show_triple_kill: true
+    show_quad_kill: true
+    show_ace: true
+  timestamp:
+    enable: false
+  custom_text:
+    enable: false
+    text: ""
+    position: [50, 50]
+
+# オーディオ処理設定
+audio_processing:
+  enable: true
+  background_music:
+    enable: true
+    music_path: ""  # BGMファイルパス（空の場合は無効）
+    video_volume: 0.7
+    music_volume: 0.3
+  normalization:
+    enable: true
+    target_level: "-16dB"
+  enhancement:
+    enable: true
+    enhance_gunshots: true
+  bass_boost:
+    enable: false
+    gain: 5  # dB
+  fade:
+    enable: true
+    fade_in: 1.0  # 秒
+    fade_out: 1.0  # 秒
+
+# 構成最適化設定
+composition:
+  enable: true
+  target_duration: 180  # 目標動画長（秒）、3分
+  min_clip_length: 3.0  # 最小クリップ長（秒）
+  max_clip_length: 15.0  # 最大クリップ長（秒）
+  optimal_pace: 5.0  # 理想的なクリップ平均長（秒）
+  sort_by_score: true  # ベストクリップを先に
+  optimize_pacing: true  # 高強度と中強度を交互配置
+  create_hook: true  # 最初の3秒にベストシーン
+
+# サムネイル・SNS最適化設定
+thumbnail:
+  enable: true
+  youtube:
+    enable: true
+    add_title: true
+    add_kill_count: true
+  short_video:
+    enable: true
+    format: "9:16"  # 9:16 or 1:1
+    crop_position: "center"  # center, left, right
+    platforms:
+      - "youtube_shorts"
+      - "instagram_reel"
+      - "tiktok"
+  intro_outro:
+    enable: false
+    intro_path: ""
+    outro_path: ""
+
+# 高度なAI分析設定
+advanced_analysis:
+  enable: true
+  detect_multi_kills: true
+  multi_kill_window: 10.0  # 秒
+  detect_clutch: true
+  analyze_momentum: true
+  suggest_highlights: true  # AI推奨ハイライト
+  calculate_quality_score: true
+
+# エクスポート設定（複数フォーマット）
+multi_export:
+  enable: false  # 複数フォーマット同時エクスポート
+  formats:
+    main:
+      enable: true
+      resolution: "1920x1080"
+      format: "16:9"
+    shorts:
+      enable: true
+      resolution: "1080x1920"
+      format: "9:16"
+    thumbnail:
+      enable: true
+
+# === プロ品質機能設定 ===
+
+# AI超解像設定
+super_resolution:
+  enable: false  # デフォルトOFF (処理時間非常に長い)
+  scale: 2  # 2x or 4x upscaling
+  model: "realesrgan-x4plus"  # realesrgan-x4plus, realesrgan-x4plus-anime
+  enhance_faces: true  # GFPGAN顔強化
+  denoise_before_upscale: true
+
+# 動画品質向上設定
+video_enhancer:
+  enable: true
+  denoise:
+    enable: true
+    strength: "medium"  # light, medium, strong
+  stabilize:
+    enable: false  # 手ブレ補正 (処理時間長い)
+    smoothing: 10
+  sharpen:
+    enable: true
+    amount: 1.0
+  lut:
+    enable: true
+    preset: "cinematic"  # cinematic, teal_orange, vintage, warm, cool, vibrant, moody, bleach_bypass
+    custom_lut_file: ""  # .cubeファイルパス (オプション)
+  grain:
+    enable: false
+    strength: 0.3
+  auto_levels: false
+
+# AI音声強化設定
+audio_enhancer:
+  enable: true
+  remove_noise: true
+  enhance_voice_clarity: true
+  voice_eq_preset: "gaming"  # gaming, podcast, music
+
+# 自動字幕生成設定 (Whisper)
+subtitle_generator:
+  enable: false  # デフォルトOFF (処理時間長い)
+  model: "base"  # tiny, base, small, medium, large
+  language: "ja"
+  burn_into_video: true  # 動画に焼き込むか
+  style:
+    font_size: 24
+    font_color: "white"
+    outline_color: "black"
+
+# 動的BGMマッチング設定
+music_matcher:
+  enable: false
+  bgm_library_path: "./bgm"  # BGMライブラリフォルダ
+  match_intensity: true  # シーンの強度に合わせてBGM選択
+  auto_crossfade: true
+  ducking: true  # ゲーム音声がある時BGM音量下げる
+
+# スマートクロッピング設定
+smart_cropper:
+  enable: true
+  tracking_mode: "center"  # center, face, action
+  output_9_16: true  # 9:16縦動画生成
+  padding: 10  # ピクセル
+
+# シーン分類AI設定
+scene_classifier:
+  enable: true
+  remove_lobbies: true  # ロビー待機シーン削除
+  remove_menus: true  # メニュー画面削除
+  min_action_duration: 3.0  # 最小アクションシーン長
+
+# 感情分析設定
+emotion_analyzer:
+  enable: false  # デフォルトOFF (要追加ライブラリ)
+  analyze_voice_tone: true
+  detect_excitement: true
+
+# GPUエンコード設定
+gpu_encoder:
+  enable: true
+  auto_detect: true
+  codec: "h264"  # h264, h265, av1
+  quality: "high"  # low, medium, high, ultra
+  preset: "p4"  # NVENC: p1-p7, CPU: ultrafast-veryslow
+
+# サムネイルA/Bテスト設定
+thumbnail_ab_tester:
+  enable: true
+  generate_variants: 5
+  styles:
+    - "simple"
+    - "bold"
+    - "minimal"
+    - "dramatic"
+    - "bright"
+
+# エンゲージメント予測設定
+engagement_predictor:
+  enable: true
+  predict_retention: true
+  predict_ctr: true
+  suggest_improvements: true
+
+# 自動チャプター生成設定
+chapter_generator:
+  enable: true
+  export_youtube_format: true
+  min_chapter_length: 30  # 秒
+
+# モーショングラフィックス設定
+motion_graphics:
+  enable: false  # デフォルトOFF (複雑)
+  particle_effects: false
+  lower_thirds: false
+
+# 3Dトランジション設定
+transition_3d:
+  enable: false
+  style: "cube"  # cube, flip, zoom, rotate
+
+# マルチカメラ編集設定
+multi_camera:
+  enable: false
+  facecam_path: ""  # フェイスカム動画パス
+  pip_position: "bottom_right"  # top_left, top_right, bottom_left, bottom_right
+  pip_size: 0.25  # 画面の25%

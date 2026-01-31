@@ -1,0 +1,40 @@
+# Web Framework
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+python-multipart>=0.0.6
+aiofiles>=23.2.0
+
+# Video Processing
+opencv-python>=4.8.0
+numpy>=1.24.0
+pillow>=10.0.0
+moviepy>=1.0.3
+
+# AI Integration
+requests>=2.31.0
+faster-whisper>=0.10.0
+openai-whisper>=20231117
+
+# Audio Processing
+librosa>=0.10.0
+soundfile>=0.12.1
+pydub>=0.25.1
+
+# Image Enhancement (Optional - for advanced features)
+# realesrgan  # Install separately: pip install realesrgan
+# gfpgan  # Install separately: pip install gfpgan
+
+# Machine Learning (Optional)
+scikit-learn>=1.3.0
+scipy>=1.11.0
+
+# Configuration
+pyyaml>=6.0
+python-dotenv>=1.0.0
+
+# Progress Tracking
+websockets>=12.0
+
+# Utilities
+tqdm>=4.66.0
+colorama>=0.4.6

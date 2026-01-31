@@ -1,0 +1,51 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+.venv
+
+# Logs
+logs/
+*.log
+
+# Uploads and Output
+uploads/
+frames/
+output/
+*.mp4
+*.mkv
+*.avi
+*.mov
+*.jpg
+*.jpeg
+*.png
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Config (if contains sensitive data)
+# config.yaml
+
+# Temporary files
+*.tmp
+temp/
+cache/
+
+
+# Claude code に関するプライベート情報を無視する
+.claude
+
