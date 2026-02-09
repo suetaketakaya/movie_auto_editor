@@ -1,0 +1,30 @@
+version: "3.9"
+
+# Development overrides: no GPU, source bind mount, hot reload
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    command: uvicorn backend.src.adapters.inbound.fastapi_app:app --host 0.0.0.0 --port 8000 --reload
+    environment:
+      - APP_ENV=development
+      - PERSISTENCE_BACKEND=memory
+    volumes:
+      - ./backend/src:/app/backend/src:ro
+      - media_data:/data/media
+
+  celery-worker:
+    command: celery -A backend.src.adapters.inbound.celery_tasks worker --loglevel=debug --concurrency=1
+    volumes:
+      - ./backend/src:/app/backend/src:ro
+      - media_data:/data/media
+    deploy:
+      resources: {}  # No GPU reservation in dev
+
+  ollama:
+    deploy:
+      resources: {}  # No GPU reservation in dev
+
+volumes:
+  media_data:

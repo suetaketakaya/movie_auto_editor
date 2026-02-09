@@ -1,6 +1,7 @@
 // Auto-FPS-Clipper Frontend JavaScript
+// Updated for Backend v4 API
 
-let currentJobId = null;
+let currentProjectId = null;
 let websocket = null;
 let selectedFile = null;
 
@@ -128,24 +129,27 @@ async function handleUpload() {
 
     const formData = new FormData();
     formData.append('file', selectedFile);
+    formData.append('name', selectedFile.name);
+    formData.append('content_type', 'fps_montage');
 
     try {
         uploadBtn.disabled = true;
         uploadBtn.textContent = 'アップロード中...';
 
-        const response = await fetch('/api/upload', {
+        const response = await fetch('/api/processing/upload', {
             method: 'POST',
             body: formData
         });
 
         if (!response.ok) {
-            throw new Error('アップロードに失敗しました');
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData.detail || 'アップロードに失敗しました');
         }
 
         const data = await response.json();
-        currentJobId = data.job_id;
+        currentProjectId = data.project_id;
 
-        addLog(`✅ ファイルアップロード完了: ${data.filename}`);
+        addLog(`✅ ファイルアップロード完了: ${selectedFile.name}`);
 
         // Start processing
         await startProcessing();
@@ -169,16 +173,25 @@ async function startProcessing() {
         // Connect WebSocket
         connectWebSocket();
 
-        // Start processing
-        const response = await fetch(`/api/process/${currentJobId}`, {
-            method: 'POST'
+        // Start processing via v4 API
+        const response = await fetch('/api/processing/start', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                project_id: currentProjectId,
+                content_type: 'fps_montage'
+            })
         });
 
         if (!response.ok) {
-            throw new Error('処理の開始に失敗しました');
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData.detail || '処理の開始に失敗しました');
         }
 
-        addLog('⚙️ 処理が開始されました');
+        const data = await response.json();
+        addLog(`⚙️ 処理が開始されました (タスク: ${data.task_id})`);
 
     } catch (error) {
         showError(error.message);
@@ -187,7 +200,7 @@ async function startProcessing() {
 
 function connectWebSocket() {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${protocol}//${window.location.host}/ws/${currentJobId}`;
+    const wsUrl = `${protocol}//${window.location.host}/ws/${currentProjectId}`;
 
     websocket = new WebSocket(wsUrl);
 
@@ -276,23 +289,24 @@ async function handleProcessingComplete(outputFile) {
 
     // Setup download button
     downloadBtn.onclick = () => {
-        window.location.href = outputFile;
+        window.location.href = outputFile || `/api/download/${currentProjectId}`;
     };
 
-    // Load job stats
+    // Load project stats from v4 API
     try {
-        const response = await fetch(`/api/status/${currentJobId}`);
-        const jobData = await response.json();
+        const response = await fetch(`/api/processing/status/${currentProjectId}`);
+        const projectData = await response.json();
 
+        const result = projectData.result || {};
         const stats = `
-            <p><strong>処理時間:</strong> ${calculateProcessingTime(jobData)}</p>
-            <p><strong>検出されたクリップ数:</strong> ${jobData.clips ? jobData.clips.length : 0}</p>
-            <p><strong>抽出フレーム数:</strong> ${jobData.frames_count || 0}</p>
+            <p><strong>処理時間:</strong> ${calculateProcessingTime(projectData)}</p>
+            <p><strong>検出されたクリップ数:</strong> ${result.clip_count || 0}</p>
+            <p><strong>品質スコア:</strong> ${result.quality_score ? result.quality_score.toFixed(1) : 'N/A'}</p>
         `;
 
         document.getElementById('resultStats').innerHTML = stats;
     } catch (error) {
-        console.error('Failed to load job stats:', error);
+        console.error('Failed to load project stats:', error);
     }
 }
 
@@ -331,7 +345,7 @@ function resetToUpload() {
     errorSection.style.display = 'none';
 
     // Reset state
-    currentJobId = null;
+    currentProjectId = null;
     selectedFile = null;
     fileInput.value = '';
 
@@ -352,8 +366,8 @@ function resetToUpload() {
 }
 
 function handleDownload() {
-    if (currentJobId) {
-        window.location.href = `/api/download/${currentJobId}`;
+    if (currentProjectId) {
+        window.location.href = `/api/download/${currentProjectId}`;
         addLog('📥 ダウンロードを開始しました');
     }
 }

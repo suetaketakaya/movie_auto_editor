@@ -1,0 +1,13 @@
+"""Port for experiment persistence."""
+from __future__ import annotations
+from typing import TYPE_CHECKING, Optional, Protocol, runtime_checkable
+if TYPE_CHECKING:
+    from backend.src.core.entities.experiment import Experiment, Trial
+
+
+@runtime_checkable
+class ExperimentRepositoryPort(Protocol):
+    async def save(self, experiment: Experiment) -> Experiment: ...
+    async def get_by_id(self, experiment_id: str) -> Optional[Experiment]: ...
+    async def list_all(self) -> list[Experiment]: ...
+    async def add_trial(self, experiment_id: str, trial: Trial) -> None: ...

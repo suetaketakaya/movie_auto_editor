@@ -44,8 +44,15 @@ desktop.ini
 *.tmp
 temp/
 cache/
+nul
 
+# Environment
+.env
+.env.*
+
+# Media storage
+media/
 
 # Claude code に関するプライベート情報を無視する
-.claude
+.claude*
 
