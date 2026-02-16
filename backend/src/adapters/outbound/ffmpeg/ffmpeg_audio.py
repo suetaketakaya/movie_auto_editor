@@ -74,7 +74,7 @@ class FFmpegAudioProcessor:
             "-af", "loudnorm=I=-16:TP=-1.5:LRA=11",
             "-c:v", "copy",
             "-c:a", "aac",
-            "-b:a", "192k",
+            "-b:a", "320k",
             str(output_path),
         ])
         return str(output_path)
@@ -118,7 +118,7 @@ class FFmpegAudioProcessor:
             "-af", af,
             "-c:v", "copy",
             "-c:a", "aac",
-            "-b:a", "192k",
+            "-b:a", "320k",
             str(output_path),
         ])
         return str(output_path)
@@ -132,7 +132,7 @@ class FFmpegAudioProcessor:
             "-af", f"equalizer=f=100:width_type=h:width=50:g={gain}",
             "-c:v", "copy",
             "-c:a", "aac",
-            "-b:a", "192k",
+            "-b:a", "320k",
             str(output_path),
         ])
         return str(output_path)

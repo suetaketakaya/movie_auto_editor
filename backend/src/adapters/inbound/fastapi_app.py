@@ -5,6 +5,7 @@ Replaces legacy app.py monolith.
 from __future__ import annotations
 
 import logging
+import os
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -24,11 +25,19 @@ settings = Settings()
 # Project root for static files
 PROJECT_ROOT = Path(__file__).parent.parent.parent.parent.parent
 
+# Auth-exempt paths (no Bearer token needed)
+_AUTH_EXEMPT_PREFIXES = (
+    "/api/health", "/api/config/firebase",
+    "/static", "/media", "/ws/",
+    "/docs", "/openapi.json", "/redoc",
+)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application startup/shutdown lifecycle."""
     setup_logging(settings.logging.level)
+    settings.validate_production()
     logger.info("ClipMontage backend starting up...")
     from backend.src.infrastructure.container import ApplicationContainer
     app.state.container = ApplicationContainer(settings)
@@ -39,17 +48,83 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="ClipMontage API",
     description="Universal Video Montage Platform",
-    version="0.1.0",
+    version="0.2.0",
     lifespan=lifespan,
 )
 
+# CORS: restrict origins in production
+_allowed_origin = os.environ.get("ALLOWED_ORIGIN", "")
+if settings.app_env == "production" and _allowed_origin:
+    _origins = [o.strip() for o in _allowed_origin.split(",") if o.strip()]
+else:
+    _origins = ["*"]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# API Key authentication (legacy fallback)
+_api_key = os.environ.get("API_KEY", "")
+
+
+@app.middleware("http")
+async def auth_middleware(request: Request, call_next):
+    """Authenticate via Firebase Bearer token or legacy API key.
+
+    Attaches ``request.state.user`` when authentication succeeds.
+    """
+    path = request.url.path
+
+    # Skip auth for exempt paths and the root page
+    if path == "/" or any(path.startswith(p) for p in _AUTH_EXEMPT_PREFIXES):
+        return await call_next(request)
+
+    # --- Try Bearer token (Firebase) first ---
+    auth_header = request.headers.get("Authorization", "")
+    if auth_header.startswith("Bearer "):
+        token = auth_header[7:]
+        try:
+            user_auth = request.app.state.container.user_auth()
+            user = await user_auth.verify_token(token)
+            if user:
+                request.state.user = user
+                return await call_next(request)
+        except Exception as exc:
+            logger.warning("Bearer token verification failed: %s", exc)
+        return JSONResponse(status_code=401, content={"detail": "Invalid or expired token"})
+
+    # --- Fallback: API Key ---
+    if _api_key:
+        provided_key = request.headers.get("X-API-Key", "")
+        if provided_key == _api_key:
+            # API-key users get a pseudo-user
+            from backend.src.core.entities.user import User
+            request.state.user = User(
+                id="apikey-user",
+                firebase_uid="apikey-user",
+                email="apikey@system",
+                display_name="API Key User",
+            )
+            return await call_next(request)
+        return JSONResponse(status_code=401, content={"detail": "Invalid or missing API key"})
+
+    # --- No auth configured (dev mode) — attach dev user ---
+    if not settings.firebase.enabled:
+        try:
+            user_auth = request.app.state.container.user_auth()
+            user = await user_auth.verify_token("")
+            if user:
+                request.state.user = user
+        except Exception:
+            pass
+        return await call_next(request)
+
+    return JSONResponse(status_code=401, content={"detail": "Authentication required"})
 
 
 @app.middleware("http")
@@ -66,6 +141,41 @@ async def request_logging_middleware(request: Request, call_next):
         duration_ms,
     )
     return response
+
+
+from backend.src.core.exceptions import (
+    ClipMontageError,
+    ProjectNotFoundError,
+    ProcessingError,
+    UploadValidationError,
+    AIAnalysisError,
+    FFmpegError,
+)
+
+
+@app.exception_handler(ProjectNotFoundError)
+async def project_not_found_handler(request: Request, exc: ProjectNotFoundError):
+    return JSONResponse(status_code=404, content={"detail": str(exc)})
+
+
+@app.exception_handler(UploadValidationError)
+async def upload_validation_handler(request: Request, exc: UploadValidationError):
+    return JSONResponse(status_code=400, content={"detail": str(exc)})
+
+
+@app.exception_handler(ProcessingError)
+async def processing_error_handler(request: Request, exc: ProcessingError):
+    return JSONResponse(status_code=422, content={"detail": str(exc)})
+
+
+@app.exception_handler(AIAnalysisError)
+async def ai_analysis_handler(request: Request, exc: AIAnalysisError):
+    return JSONResponse(status_code=502, content={"detail": str(exc)})
+
+
+@app.exception_handler(FFmpegError)
+async def ffmpeg_error_handler(request: Request, exc: FFmpegError):
+    return JSONResponse(status_code=500, content={"detail": str(exc)})
 
 
 @app.exception_handler(ValueError)
@@ -94,7 +204,18 @@ app.include_router(dashboard_router, prefix="/api/dashboard", tags=["dashboard"]
 
 @app.get("/api/health")
 async def health():
-    return {"status": "ok", "version": "0.1.0"}
+    return {"status": "ok", "version": "0.2.0"}
+
+
+@app.get("/api/config/firebase")
+async def firebase_config():
+    """Return public Firebase config for frontend SDK initialization."""
+    return {
+        "enabled": settings.firebase.enabled,
+        "apiKey": settings.firebase.api_key,
+        "authDomain": settings.firebase.auth_domain,
+        "projectId": settings.firebase.project_id,
+    }
 
 
 @app.get("/api/plugins")
@@ -105,13 +226,23 @@ async def list_plugins():
 
 
 @app.websocket("/ws/{project_id}")
-async def websocket_endpoint(websocket: WebSocket, project_id: str):
-    """WebSocket endpoint for real-time project updates."""
+async def websocket_endpoint(websocket: WebSocket, project_id: str, token: str = ""):
+    """WebSocket endpoint for real-time project updates.
+
+    Accepts an optional ``token`` query parameter for Firebase auth.
+    """
+    # Verify token if Firebase is enabled
+    if settings.firebase.enabled and token:
+        user_auth = app.state.container.user_auth()
+        user = await user_auth.verify_token(token)
+        if not user:
+            await websocket.close(code=4001, reason="Invalid token")
+            return
+
     notifier = app.state.container.notification()
     await notifier.connect(project_id, websocket)
     try:
         while True:
-            # Keep connection alive, waiting for messages
             await websocket.receive_text()
     except WebSocketDisconnect:
         await notifier.disconnect(project_id, websocket)
@@ -141,6 +272,24 @@ async def download_video(project_id: str):
         media_type="video/mp4",
         filename=f"{project.name}_highlight.mp4",
     )
+
+
+@app.post("/api/projects/{project_id}/cancel")
+async def cancel_processing(project_id: str):
+    """Cancel processing for a project."""
+    project_service = app.state.container.project_service()
+    project = await project_service.get_project(project_id)
+
+    if project is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    project.fail("Cancelled by user")
+    repo = app.state.container.project_repository()
+    await repo.save(project)
+    notifier = app.state.container.notification()
+    await notifier.send_error(project_id, "Processing cancelled by user")
+
+    return {"status": "cancelled", "project_id": project_id}
 
 
 # ── Static files & Frontend ─────────────────────────────────────

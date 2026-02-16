@@ -17,7 +17,7 @@ class RewardCalculator:
     """Calculates composite reward signals from multiple quality metrics."""
 
     def __init__(self, weights: Optional[dict[str, float]] = None):
-        self.weights = weights or DEFAULT_WEIGHTS.copy()
+        self.weights = DEFAULT_WEIGHTS.copy() if weights is None else weights
 
     def calculate(self, metrics: dict[str, float]) -> RewardSignal:
         """Calculate composite reward from individual 0-1 normalized metrics."""

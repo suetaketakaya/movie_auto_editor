@@ -46,6 +46,11 @@ class InMemoryProjectRepository:
         async with self._lock:
             return list(self._store.values())
 
+    async def list_by_user(self, user_id: str) -> list[Project]:
+        """Return projects owned by a specific user."""
+        async with self._lock:
+            return [p for p in self._store.values() if p.user_id == user_id]
+
     async def delete(self, project_id: str) -> None:
         """Remove a project from the store."""
         async with self._lock:

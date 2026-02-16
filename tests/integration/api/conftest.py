@@ -1,8 +1,14 @@
 """Integration test fixtures for API testing."""
 from __future__ import annotations
 
+import os
+
 import pytest
 from httpx import AsyncClient, ASGITransport
+
+# Override environment BEFORE importing app/settings so tests run without auth
+os.environ.setdefault("APP_ENV", "test")
+os.environ["FIREBASE_ENABLED"] = "false"
 
 from backend.src.adapters.inbound.fastapi_app import app
 from backend.src.infrastructure.config import Settings
@@ -15,6 +21,7 @@ def test_settings():
     settings = Settings()
     settings.persistence_backend = "memory"
     settings.app_env = "test"
+    settings.firebase.enabled = False
     return settings
 
 

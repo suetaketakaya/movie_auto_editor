@@ -10,6 +10,7 @@ import base64
 import json
 import logging
 import re
+import time
 from pathlib import Path
 from typing import Any
 
@@ -18,6 +19,10 @@ import requests
 from backend.src.core.entities.analysis_result import FrameAnalysis
 
 logger = logging.getLogger(__name__)
+
+# Retry configuration
+MAX_RETRIES = 3
+INITIAL_BACKOFF = 2.0  # seconds
 
 
 class OllamaVisionAdapter:
@@ -114,15 +119,50 @@ class OllamaVisionAdapter:
     # Internal / synchronous helpers
     # ------------------------------------------------------------------
 
+    def _request_with_retry(
+        self, url: str, payload: dict, timeout: int
+    ) -> requests.Response:
+        """Make an HTTP request with exponential backoff retry."""
+        last_exc: Exception | None = None
+        for attempt in range(MAX_RETRIES):
+            try:
+                response = requests.post(
+                    url,
+                    json=payload,
+                    timeout=timeout,
+                )
+                response.raise_for_status()
+                return response
+            except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as exc:
+                last_exc = exc
+                backoff = INITIAL_BACKOFF * (2 ** attempt)
+                logger.warning(
+                    "Ollama request attempt %d/%d failed (%s), retrying in %.1fs",
+                    attempt + 1, MAX_RETRIES, exc, backoff,
+                )
+                time.sleep(backoff)
+            except requests.exceptions.HTTPError as exc:
+                # Don't retry on 4xx errors
+                if exc.response is not None and 400 <= exc.response.status_code < 500:
+                    raise
+                last_exc = exc
+                backoff = INITIAL_BACKOFF * (2 ** attempt)
+                logger.warning(
+                    "Ollama request attempt %d/%d failed (HTTP %s), retrying in %.1fs",
+                    attempt + 1, MAX_RETRIES, exc, backoff,
+                )
+                time.sleep(backoff)
+        raise last_exc  # type: ignore[misc]
+
     def _analyze_frame_sync(self, frame_path: str) -> FrameAnalysis:
         """Synchronous single-frame analysis (runs in executor)."""
         try:
             image_b64 = self._encode_image(frame_path)
             prompt = self._create_vision_prompt()
 
-            response = requests.post(
+            response = self._request_with_retry(
                 f"{self._base_url}/api/generate",
-                json={
+                {
                     "model": self._vision_model,
                     "prompt": prompt,
                     "images": [image_b64],
@@ -131,7 +171,6 @@ class OllamaVisionAdapter:
                 },
                 timeout=self._timeout,
             )
-            response.raise_for_status()
             raw_text = response.json().get("response", "{}")
 
             try:
@@ -156,6 +195,9 @@ class OllamaVisionAdapter:
                 scene_description=str(parsed.get("scene_description", "")),
                 confidence=float(parsed.get("confidence", 0.0)),
                 ui_elements=str(parsed.get("ui_elements", "")),
+                kill_count=int(parsed.get("kill_count", 0)),
+                enemy_count=int(parsed.get("enemy_count", 0)),
+                visual_quality=str(parsed.get("visual_quality", "normal")),
                 model_used=self._vision_model,
                 raw_response=raw_text,
             )
@@ -169,16 +211,30 @@ class OllamaVisionAdapter:
     @staticmethod
     def _create_vision_prompt() -> str:
         return (
-            "Analyze this FPS game screenshot and provide a JSON response "
-            "with the following fields:\n\n"
+            "You are an expert FPS game footage analyst. Analyze this game screenshot "
+            "carefully, paying attention to the HUD elements (kill feed, minimap, "
+            "health/armor bars, ammo counter, scoreboard), player perspective, and "
+            "on-screen action.\n\n"
+            "Provide a JSON response with these fields:\n\n"
             "{\n"
-            '    "kill_log": boolean,\n'
-            '    "match_status": string,\n'
-            '    "action_intensity": string,\n'
-            '    "enemy_visible": boolean,\n'
-            '    "ui_elements": string,\n'
-            '    "scene_description": string\n'
+            '    "kill_log": boolean (true if kill feed shows a recent kill by the player),\n'
+            '    "kill_count": integer (number of kills visible in kill feed for the player, 0 if none),\n'
+            '    "match_status": string ("normal", "clutch", "victory", "defeat", "overtime"),\n'
+            '    "action_intensity": string ("very_high", "high", "medium", "low"),\n'
+            '    "enemy_visible": boolean (true if enemy players are visible on screen),\n'
+            '    "enemy_count": integer (number of visible enemy players, 0 if none),\n'
+            '    "ui_elements": string (describe visible HUD elements),\n'
+            '    "visual_quality": string ("cinematic", "high", "normal", "low"),\n'
+            '    "scene_description": string (brief description of the action),\n'
+            '    "confidence": float (0.0 to 1.0, your confidence in this analysis)\n'
             "}\n\n"
+            "Guidelines:\n"
+            "- action_intensity: very_high = active multi-kill/clutch, high = active combat, "
+            "medium = positioning/utility, low = idle/walking\n"
+            "- visual_quality: cinematic = dramatic angle/lighting, high = clear action shot, "
+            "normal = standard gameplay, low = obscured/dark\n"
+            "- Be precise about kill_count: count individual kill entries in the kill feed\n"
+            "- confidence: rate how certain you are about the analysis overall\n\n"
             "Only respond with valid JSON, no additional text."
         )
 
@@ -190,9 +246,9 @@ class OllamaVisionAdapter:
     ) -> list[dict[str, Any]]:
         try:
             prompt = self._create_thinking_prompt(analysis_results)
-            response = requests.post(
+            response = self._request_with_retry(
                 f"{self._base_url}/api/generate",
-                json={
+                {
                     "model": self._thinking_model,
                     "prompt": prompt,
                     "stream": False,
@@ -200,7 +256,6 @@ class OllamaVisionAdapter:
                 },
                 timeout=self._timeout * 2,
             )
-            response.raise_for_status()
 
             try:
                 data = json.loads(response.json().get("response", "{}"))

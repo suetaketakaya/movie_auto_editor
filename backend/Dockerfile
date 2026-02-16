@@ -14,7 +14,9 @@ RUN pip install --no-cache-dir -e .
 COPY src/ backend/src/
 COPY alembic/ backend/alembic/
 COPY alembic.ini backend/
+COPY entrypoint.sh /app/entrypoint.sh
+RUN chmod +x /app/entrypoint.sh
 
 EXPOSE 8000
 
-CMD ["uvicorn", "backend.src.adapters.inbound.fastapi_app:app", "--host", "0.0.0.0", "--port", "8000"]
+ENTRYPOINT ["/app/entrypoint.sh"]

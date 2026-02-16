@@ -99,7 +99,7 @@ class FFmpegEncoder:
             "-cq", cq,
             "-rc", "vbr",
             "-b:v", "0",
-            "-c:a", "aac", "-b:a", "192k",
+            "-c:a", "aac", "-b:a", "320k",
             str(output_path),
         ])
         logger.info("NVIDIA NVENC encoding completed: %s", output_path)
@@ -115,7 +115,7 @@ class FFmpegEncoder:
             "-c:v", codec_map.get(codec, "h264_amf"),
             "-quality", "quality",
             "-rc", "vbr_hq",
-            "-c:a", "aac", "-b:a", "192k",
+            "-c:a", "aac", "-b:a", "320k",
             str(output_path),
         ])
         return str(output_path)
@@ -131,7 +131,7 @@ class FFmpegEncoder:
             "-c:v", codec_map.get(codec, "h264_qsv"),
             "-preset", "slow",
             "-global_quality", "18",
-            "-c:a", "aac", "-b:a", "192k",
+            "-c:a", "aac", "-b:a", "320k",
             str(output_path),
         ])
         return str(output_path)
@@ -147,7 +147,7 @@ class FFmpegEncoder:
             "-c:v", codec_map.get(codec, "libx264"),
             "-preset", "slow",
             "-crf", crf,
-            "-c:a", "aac", "-b:a", "192k",
+            "-c:a", "aac", "-b:a", "320k",
             str(output_path),
         ])
         return str(output_path)

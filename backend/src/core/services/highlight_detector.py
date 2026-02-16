@@ -16,16 +16,39 @@ class HighlightDetector:
     """Detects highlights, multi-events, clutch moments, and excitement levels."""
 
     def analyze_excitement_levels(self, analyses: list[FrameAnalysis]) -> list[FrameAnalysis]:
-        """Calculate excitement scores for each frame analysis."""
+        """Calculate excitement scores for each frame analysis.
+
+        Scoring range: 0-80+ points (expanded from original 0-40).
+        """
         enhanced: list[FrameAnalysis] = []
         for a in analyses:
             excitement = 0.0
+
+            # Kill event: 25 base + multi-kill bonus
             if a.kill_log:
-                excitement += 20
-            intensity_map = {"very_high": 15, "high": 10, "medium": 5, "low": 0}
+                excitement += 25
+                if a.kill_count >= 3:
+                    excitement += 15  # multi-kill bonus
+                elif a.kill_count >= 2:
+                    excitement += 8   # double kill bonus
+
+            # Action intensity (expanded range)
+            intensity_map = {"very_high": 25, "high": 18, "medium": 10, "low": 0}
             excitement += intensity_map.get(a.action_intensity, 0)
-            status_map = {"victory": 10, "clutch": 15, "defeat": -5, "normal": 0}
+
+            # Match status
+            status_map = {"victory": 10, "clutch": 20, "overtime": 12, "defeat": -5, "normal": 0}
             excitement += status_map.get(a.match_status, 0)
+
+            # Enemy visibility bonus
+            if a.enemy_visible:
+                excitement += 10
+                if a.enemy_count >= 3:
+                    excitement += 5  # extra bonus for multiple enemies
+
+            # Confidence weighting: scale by AI confidence if available
+            if a.confidence > 0:
+                excitement *= (0.5 + 0.5 * a.confidence)
 
             updated = FrameAnalysis(
                 frame_path=a.frame_path,
@@ -41,6 +64,9 @@ class HighlightDetector:
                 raw_response=a.raw_response,
                 ui_elements=a.ui_elements,
                 metadata=a.metadata,
+                kill_count=a.kill_count,
+                enemy_count=a.enemy_count,
+                visual_quality=a.visual_quality,
             )
             enhanced.append(updated)
         return enhanced

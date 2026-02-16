@@ -10,18 +10,40 @@ services:
     environment:
       - APP_ENV=production
       - PERSISTENCE_BACKEND=postgres
-      - DATABASE__URL=postgresql+asyncpg://clipmontage:clipmontage@postgres:5432/clipmontage
+      - SECRET_KEY=${SECRET_KEY:?SECRET_KEY must be set}
+      - API_KEY=${API_KEY:-}
+      - ALLOWED_ORIGIN=${ALLOWED_ORIGIN:-https://moviecutter.web.app}
+      - DATABASE__URL=postgresql+asyncpg://clipmontage:${POSTGRES_PASSWORD:-clipmontage}@postgres:5432/clipmontage
       - REDIS__URL=redis://redis:6379/0
       - OLLAMA__BASE_URL=http://ollama:11434
       - MLFLOW__TRACKING_URI=http://mlflow:5000
       - CELERY__BROKER_URL=redis://redis:6379/1
       - CELERY__RESULT_BACKEND=redis://redis:6379/2
       - STORAGE__BASE_DIR=/data/media
+      - FIREBASE_ENABLED=${FIREBASE_ENABLED:-true}
+      - FIREBASE_CREDENTIALS_PATH=/run/secrets/firebase-sa.json
+      - FIREBASE_PROJECT_ID=${FIREBASE_PROJECT_ID:-moviecutter}
+      - FIREBASE_API_KEY=${FIREBASE_API_KEY:-}
+      - FIREBASE_AUTH_DOMAIN=${FIREBASE_AUTH_DOMAIN:-moviecutter.firebaseapp.com}
     volumes:
       - media_data:/data/media
+    secrets:
+      - firebase-sa
     depends_on:
-      - postgres
-      - redis
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
     restart: unless-stopped
 
   celery-worker:
@@ -31,7 +53,8 @@ services:
     environment:
       - APP_ENV=production
       - PERSISTENCE_BACKEND=postgres
-      - DATABASE__URL=postgresql+asyncpg://clipmontage:clipmontage@postgres:5432/clipmontage
+      - SECRET_KEY=${SECRET_KEY:?SECRET_KEY must be set}
+      - DATABASE__URL=postgresql+asyncpg://clipmontage:${POSTGRES_PASSWORD:-clipmontage}@postgres:5432/clipmontage
       - REDIS__URL=redis://redis:6379/0
       - OLLAMA__BASE_URL=http://ollama:11434
       - CELERY__BROKER_URL=redis://redis:6379/1
@@ -40,11 +63,16 @@ services:
     volumes:
       - media_data:/data/media
     depends_on:
-      - postgres
-      - redis
-      - ollama
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      ollama:
+        condition: service_started
     deploy:
       resources:
+        limits:
+          memory: 8G
         reservations:
           devices:
             - driver: nvidia
@@ -61,19 +89,26 @@ services:
       - CELERY__BROKER_URL=redis://redis:6379/1
       - CELERY__RESULT_BACKEND=redis://redis:6379/2
     depends_on:
-      - redis
+      redis:
+        condition: service_healthy
     restart: unless-stopped
 
   postgres:
     image: pgvector/pgvector:pg16
     environment:
       POSTGRES_USER: clipmontage
-      POSTGRES_PASSWORD: clipmontage
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-clipmontage}
       POSTGRES_DB: clipmontage
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U clipmontage -d clipmontage"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
     restart: unless-stopped
 
   redis:
@@ -82,6 +117,11 @@ services:
       - "6379:6379"
     volumes:
       - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     restart: unless-stopped
 
   ollama:
@@ -104,13 +144,14 @@ services:
     ports:
       - "5000:5000"
     environment:
-      - MLFLOW_BACKEND_STORE_URI=postgresql://clipmontage:clipmontage@postgres:5432/mlflow
+      - MLFLOW_BACKEND_STORE_URI=postgresql://clipmontage:${POSTGRES_PASSWORD:-clipmontage}@postgres:5432/mlflow
       - MLFLOW_DEFAULT_ARTIFACT_ROOT=/data/mlflow-artifacts
     command: mlflow server --host 0.0.0.0 --port 5000
     volumes:
       - mlflow_artifacts:/data/mlflow-artifacts
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
     restart: unless-stopped
 
 volumes:
@@ -119,3 +160,7 @@ volumes:
   ollama_models:
   media_data:
   mlflow_artifacts:
+
+secrets:
+  firebase-sa:
+    file: ./moviecutter-firebase-adminsdk-fbsvc-6580a48fa5.json

@@ -33,6 +33,18 @@ class ApplicationContainer:
     # ── Lazy factory helpers ──────────────────────────────────────
 
     @staticmethod
+    def _build_user_auth(settings: Settings):
+        if settings.firebase.enabled:
+            from backend.src.adapters.outbound.firebase.firebase_auth import FirebaseAuthAdapter
+            return FirebaseAuthAdapter(
+                credentials_path=settings.firebase.credentials_path,
+                project_id=settings.firebase.project_id,
+            )
+        else:
+            from backend.src.adapters.outbound.firebase.noop_auth import NoopAuthAdapter
+            return NoopAuthAdapter()
+
+    @staticmethod
     def _build_video_editor(settings: Settings):
         from backend.src.adapters.outbound.ffmpeg.ffmpeg_video_editor import FFmpegVideoEditor
         return FFmpegVideoEditor(config=settings.to_legacy_dict())
@@ -137,6 +149,9 @@ class ApplicationContainer:
         return YouTubeDataAPIAdapter()
 
     # ── Port accessors ─────────────────────────────────────────────
+
+    def user_auth(self):
+        return self._get_or_create("user_auth", self._build_user_auth)
 
     def video_editor(self):
         return self._get_or_create("video_editor", self._build_video_editor)

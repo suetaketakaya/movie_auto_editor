@@ -1,9 +1,25 @@
-// Auto-FPS-Clipper Frontend JavaScript
-// Updated for Backend v4 API
+// ClipMontage Frontend JavaScript
+// v2.2 — Firebase Authentication + Bearer tokens
 
 let currentProjectId = null;
 let websocket = null;
 let selectedFile = null;
+let wsReconnectAttempts = 0;
+let wsReconnectTimer = null;
+let pollingTimer = null;
+
+// Firebase state
+let firebaseApp = null;
+let firebaseAuth = null;
+let currentUser = null;
+let idToken = null;
+let firebaseEnabled = false;
+let tokenRefreshTimer = null;
+
+const WS_MAX_RECONNECT = 5;
+const WS_INITIAL_BACKOFF = 1000;
+const POLLING_INTERVAL = 5000;
+const FETCH_TIMEOUT = 30000;
 
 // DOM Elements
 const uploadArea = document.getElementById('uploadArea');
@@ -14,6 +30,7 @@ const fileSize = document.getElementById('fileSize');
 const uploadBtn = document.getElementById('uploadBtn');
 const cancelBtn = document.getElementById('cancelBtn');
 
+const authSection = document.getElementById('authSection');
 const uploadSection = document.getElementById('uploadSection');
 const processingSection = document.getElementById('processingSection');
 const resultSection = document.getElementById('resultSection');
@@ -28,43 +45,270 @@ const downloadBtn = document.getElementById('downloadBtn');
 const newUploadBtn = document.getElementById('newUploadBtn');
 const retryBtn = document.getElementById('retryBtn');
 
-// Initialize
-document.addEventListener('DOMContentLoaded', () => {
+// ══════════════════════════════════════════════════════════
+// INITIALIZATION
+// ══════════════════════════════════════════════════════════
+
+document.addEventListener('DOMContentLoaded', async () => {
     setupEventListeners();
+    await initFirebase();
 });
 
-function setupEventListeners() {
-    // File input
-    if (fileInput) {
-        fileInput.addEventListener('change', handleFileSelect);
-    }
+function hideLoading() {
+    const el = document.getElementById('loadingIndicator');
+    if (el) el.style.display = 'none';
+}
 
-    // Drag and drop (uploadAreaのclick削除 - labelのfor属性を使用)
+async function initFirebase() {
+    try {
+        const resp = await fetch('/api/config/firebase');
+        const config = await resp.json();
+
+        if (!config.enabled) {
+            firebaseEnabled = false;
+            hideLoading();
+            showUploadSection();
+            // Firebase auth disabled — dev mode
+            return;
+        }
+
+        firebaseEnabled = true;
+
+        // Dynamically load Firebase SDK
+        await loadScript('https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js');
+        await loadScript('https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js');
+
+        firebaseApp = firebase.initializeApp({
+            apiKey: config.apiKey,
+            authDomain: config.authDomain,
+            projectId: config.projectId,
+        });
+        firebaseAuth = firebase.auth();
+
+        // Listen for auth state changes
+        firebaseAuth.onAuthStateChanged(async (user) => {
+            // Clear any existing token refresh timer
+            if (tokenRefreshTimer) {
+                clearInterval(tokenRefreshTimer);
+                tokenRefreshTimer = null;
+            }
+
+            hideLoading();
+
+            if (user) {
+                currentUser = user;
+                idToken = await user.getIdToken();
+                showLoggedIn(user);
+                showUploadSection();
+
+                // Refresh token periodically (every 50 minutes)
+                tokenRefreshTimer = setInterval(async () => {
+                    if (currentUser) {
+                        try {
+                            idToken = await currentUser.getIdToken(true);
+                            // token refreshed
+                        } catch (e) {
+                            console.warn('Token refresh failed:', e);
+                        }
+                    }
+                }, 50 * 60 * 1000);
+            } else {
+                currentUser = null;
+                idToken = null;
+                showAuthSection();
+            }
+        });
+    } catch (e) {
+        console.error('Firebase init failed:', e);
+        firebaseEnabled = false;
+        hideLoading();
+        showUploadSection();
+    }
+}
+
+function loadScript(src) {
+    return new Promise((resolve, reject) => {
+        const script = document.createElement('script');
+        script.src = src;
+        script.onload = resolve;
+        script.onerror = reject;
+        document.head.appendChild(script);
+    });
+}
+
+// ══════════════════════════════════════════════════════════
+// AUTH UI
+// ══════════════════════════════════════════════════════════
+
+function showAuthSection() {
+    authSection.style.display = 'block';
+    uploadSection.style.display = 'none';
+    processingSection.style.display = 'none';
+    resultSection.style.display = 'none';
+    errorSection.style.display = 'none';
+    document.getElementById('userBar').style.display = 'none';
+}
+
+function showUploadSection() {
+    if (authSection) authSection.style.display = 'none';
+    uploadSection.style.display = 'block';
+}
+
+function showLoggedIn(user) {
+    const userBar = document.getElementById('userBar');
+    const userAvatar = document.getElementById('userAvatar');
+    const userNameEl = document.getElementById('userName');
+
+    if (userBar) userBar.style.display = 'flex';
+    if (userNameEl) userNameEl.textContent = user.displayName || user.email || 'User';
+    if (userAvatar) {
+        if (user.photoURL) {
+            userAvatar.src = user.photoURL;
+            userAvatar.style.display = 'block';
+        } else {
+            userAvatar.style.display = 'none';
+        }
+    }
+}
+
+function showAuthError(message) {
+    const el = document.getElementById('authError');
+    if (el) {
+        el.style.display = 'block';
+        el.textContent = message;
+    }
+}
+
+function clearAuthError() {
+    const el = document.getElementById('authError');
+    if (el) el.style.display = 'none';
+}
+
+// ══════════════════════════════════════════════════════════
+// AUTH ACTIONS
+// ══════════════════════════════════════════════════════════
+
+async function signInWithGoogle() {
+    clearAuthError();
+    try {
+        const provider = new firebase.auth.GoogleAuthProvider();
+        await firebaseAuth.signInWithPopup(provider);
+    } catch (e) {
+        showAuthError(e.message);
+    }
+}
+
+async function signInWithEmail() {
+    clearAuthError();
+    const email = document.getElementById('authEmail').value;
+    const password = document.getElementById('authPassword').value;
+    try {
+        await firebaseAuth.signInWithEmailAndPassword(email, password);
+    } catch (e) {
+        showAuthError(e.message);
+    }
+}
+
+async function signUpWithEmail() {
+    clearAuthError();
+    const email = document.getElementById('authEmail').value;
+    const password = document.getElementById('authPassword').value;
+    try {
+        await firebaseAuth.createUserWithEmailAndPassword(email, password);
+    } catch (e) {
+        showAuthError(e.message);
+    }
+}
+
+async function signOut() {
+    // Clean up processing state
+    stopPolling();
+    if (websocket) {
+        websocket.close();
+        websocket = null;
+    }
+    currentProjectId = null;
+
+    if (firebaseAuth) {
+        await firebaseAuth.signOut();
+    }
+    currentUser = null;
+    idToken = null;
+    // onAuthStateChanged will fire and call showAuthSection()
+}
+
+// ══════════════════════════════════════════════════════════
+// AUTHENTICATED FETCH
+// ══════════════════════════════════════════════════════════
+
+function getAuthHeaders() {
+    const headers = {};
+    if (idToken) {
+        headers['Authorization'] = `Bearer ${idToken}`;
+    }
+    return headers;
+}
+
+function fetchWithTimeout(url, options = {}, timeout = FETCH_TIMEOUT) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeout);
+
+    // Merge auth headers
+    const authHeaders = getAuthHeaders();
+    const mergedHeaders = { ...(options.headers || {}), ...authHeaders };
+
+    return fetch(url, {
+        ...options,
+        headers: mergedHeaders,
+        signal: controller.signal,
+    }).finally(() => clearTimeout(timer));
+}
+
+// ══════════════════════════════════════════════════════════
+// EVENT LISTENERS
+// ══════════════════════════════════════════════════════════
+
+function setupEventListeners() {
+    if (fileInput) fileInput.addEventListener('change', handleFileSelect);
+
     if (uploadArea) {
         uploadArea.addEventListener('dragover', handleDragOver);
         uploadArea.addEventListener('dragleave', handleDragLeave);
         uploadArea.addEventListener('drop', handleDrop);
     }
 
-    // Buttons
     if (uploadBtn) uploadBtn.addEventListener('click', handleUpload);
     if (cancelBtn) cancelBtn.addEventListener('click', handleCancel);
     if (downloadBtn) downloadBtn.addEventListener('click', handleDownload);
     if (newUploadBtn) newUploadBtn.addEventListener('click', resetToUpload);
     if (retryBtn) retryBtn.addEventListener('click', resetToUpload);
 
-    console.log('Event listeners initialized successfully');
+    const cancelProcessBtn = document.getElementById('cancelProcessBtn');
+    if (cancelProcessBtn) cancelProcessBtn.addEventListener('click', handleCancelProcessing);
+
+    // Auth buttons
+    const googleBtn = document.getElementById('googleSignInBtn');
+    if (googleBtn) googleBtn.addEventListener('click', signInWithGoogle);
+
+    const emailForm = document.getElementById('emailAuthForm');
+    if (emailForm) emailForm.addEventListener('submit', (e) => { e.preventDefault(); signInWithEmail(); });
+
+    const signUpBtn = document.getElementById('emailSignUpBtn');
+    if (signUpBtn) signUpBtn.addEventListener('click', signUpWithEmail);
+
+    const logoutBtn = document.getElementById('logoutBtn');
+    if (logoutBtn) logoutBtn.addEventListener('click', signOut);
+
+    // Event listeners initialized
 }
 
+// ══════════════════════════════════════════════════════════
+// FILE HANDLING
+// ══════════════════════════════════════════════════════════
+
 function handleFileSelect(e) {
-    console.log('File input change event triggered');
     const file = e.target.files[0];
-    if (file) {
-        console.log('File selected:', file.name, file.size, 'bytes');
-        setSelectedFile(file);
-    } else {
-        console.log('No file selected');
-    }
+    if (file) setSelectedFile(file);
 }
 
 function handleDragOver(e) {
@@ -83,36 +327,28 @@ function handleDrop(e) {
     e.preventDefault();
     e.stopPropagation();
     uploadArea.classList.remove('dragover');
-
     const file = e.dataTransfer.files[0];
-    if (file) {
-        setSelectedFile(file);
-    }
+    if (file) setSelectedFile(file);
 }
 
 function setSelectedFile(file) {
     selectedFile = file;
-
-    // Validate file type
-    const validExtensions = ['.mp4', '.mkv', '.avi', '.mov'];
+    const validExtensions = ['.mp4', '.mkv', '.avi', '.mov', '.webm'];
     const fileExt = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
 
     if (!validExtensions.includes(fileExt)) {
-        showError('無効なファイル形式です。MP4, MKV, AVI, MOVファイルのみ対応しています。');
+        showError('Invalid file format. Supported: MP4, MKV, AVI, MOV, WebM');
         return;
     }
 
-    // Validate file size (20GB max)
-    const maxSize = 20 * 1024 * 1024 * 1024; // 20GB
+    const maxSize = 20 * 1024 * 1024 * 1024;
     if (file.size > maxSize) {
-        showError('ファイルサイズが大きすぎます。最大20GBまで対応しています。');
+        showError('File too large. Maximum size: 20GB');
         return;
     }
 
-    // Update UI
     fileName.textContent = file.name;
     fileSize.textContent = formatFileSize(file.size);
-
     uploadArea.style.display = 'none';
     selectedFileDiv.style.display = 'block';
 }
@@ -124,6 +360,10 @@ function handleCancel() {
     selectedFileDiv.style.display = 'none';
 }
 
+// ══════════════════════════════════════════════════════════
+// UPLOAD & PROCESSING
+// ══════════════════════════════════════════════════════════
+
 async function handleUpload() {
     if (!selectedFile) return;
 
@@ -134,135 +374,218 @@ async function handleUpload() {
 
     try {
         uploadBtn.disabled = true;
-        uploadBtn.textContent = 'アップロード中...';
+        uploadBtn.textContent = 'Uploading...';
 
-        const response = await fetch('/api/processing/upload', {
+        const response = await fetchWithTimeout('/api/processing/upload', {
             method: 'POST',
-            body: formData
-        });
+            body: formData,
+        }, 120000);
 
         if (!response.ok) {
             const errorData = await response.json().catch(() => ({}));
-            throw new Error(errorData.detail || 'アップロードに失敗しました');
+            throw new Error(errorData.detail || 'Upload failed');
         }
 
         const data = await response.json();
         currentProjectId = data.project_id;
-
-        addLog(`✅ ファイルアップロード完了: ${selectedFile.name}`);
-
-        // Start processing
+        addLog('Upload complete: ' + selectedFile.name);
         await startProcessing();
 
     } catch (error) {
-        showError(error.message);
+        if (error.name === 'AbortError') {
+            showUploadError('Upload timed out. Please try again.');
+        } else {
+            showUploadError(error.message);
+        }
     } finally {
         uploadBtn.disabled = false;
-        uploadBtn.textContent = 'アップロード開始';
+        uploadBtn.textContent = 'Upload';
     }
+}
+
+function showUploadError(message) {
+    uploadSection.style.display = 'none';
+    errorSection.style.display = 'block';
+    document.getElementById('errorMessage').textContent = message;
+    addLog('Error: ' + message);
 }
 
 async function startProcessing() {
     try {
-        // Show processing section
         uploadSection.style.display = 'none';
         processingSection.style.display = 'block';
+        addLog('Starting processing...');
 
-        addLog('🚀 処理を開始します...');
-
-        // Connect WebSocket
         connectWebSocket();
 
-        // Start processing via v4 API
-        const response = await fetch('/api/processing/start', {
+        const response = await fetchWithTimeout('/api/processing/start', {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 project_id: currentProjectId,
-                content_type: 'fps_montage'
-            })
+                content_type: 'fps_montage',
+            }),
         });
 
         if (!response.ok) {
             const errorData = await response.json().catch(() => ({}));
-            throw new Error(errorData.detail || '処理の開始に失敗しました');
+            throw new Error(errorData.detail || 'Failed to start processing');
         }
 
         const data = await response.json();
-        addLog(`⚙️ 処理が開始されました (タスク: ${data.task_id})`);
-
+        addLog('Processing started (task: ' + data.task_id + ')');
     } catch (error) {
         showError(error.message);
     }
 }
 
+// ══════════════════════════════════════════════════════════
+// WEBSOCKET (with token auth)
+// ══════════════════════════════════════════════════════════
+
 function connectWebSocket() {
+    if (wsReconnectTimer) {
+        clearTimeout(wsReconnectTimer);
+        wsReconnectTimer = null;
+    }
+
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${protocol}//${window.location.host}/ws/${currentProjectId}`;
+    let wsUrl = `${protocol}//${window.location.host}/ws/${currentProjectId}`;
+
+    // Pass token as query param for WebSocket auth
+    if (idToken) {
+        wsUrl += `?token=${encodeURIComponent(idToken)}`;
+    }
 
     websocket = new WebSocket(wsUrl);
 
     websocket.onopen = () => {
-        addLog('🔌 WebSocket接続確立');
+        wsReconnectAttempts = 0;
+        updateConnectionStatus('connected');
+        addLog('WebSocket connected');
     };
 
     websocket.onmessage = (event) => {
-        const data = JSON.parse(event.data);
-        handleProgressUpdate(data);
+        try {
+            const data = JSON.parse(event.data);
+            if (data && typeof data === 'object' && data.type) {
+                handleProgressUpdate(data);
+            }
+        } catch (e) {
+            console.warn('Invalid WebSocket message:', e);
+        }
     };
 
     websocket.onerror = (error) => {
         console.error('WebSocket error:', error);
-        addLog('⚠️ リアルタイム更新の接続に失敗しました');
     };
 
     websocket.onclose = () => {
-        addLog('🔌 WebSocket接続終了');
+        updateConnectionStatus('disconnected');
+        if (processingSection.style.display === 'block') {
+            attemptReconnect();
+        }
     };
 }
 
+function attemptReconnect() {
+    if (wsReconnectAttempts >= WS_MAX_RECONNECT) {
+        addLog('WebSocket reconnection failed. Switching to polling...');
+        updateConnectionStatus('polling');
+        startPolling();
+        return;
+    }
+
+    wsReconnectAttempts++;
+    const backoff = WS_INITIAL_BACKOFF * Math.pow(2, wsReconnectAttempts - 1);
+    addLog('Reconnecting WebSocket (' + wsReconnectAttempts + '/' + WS_MAX_RECONNECT + ')...');
+
+    wsReconnectTimer = setTimeout(() => connectWebSocket(), backoff);
+}
+
+function startPolling() {
+    if (pollingTimer) return;
+
+    pollingTimer = setInterval(async () => {
+        if (!currentProjectId) { stopPolling(); return; }
+        try {
+            const response = await fetchWithTimeout(`/api/processing/status/${currentProjectId}`);
+            if (!response.ok) return;
+
+            const data = await response.json();
+            if (data.status === 'completed') {
+                handleProgressUpdate({
+                    type: 'completion', progress: 100,
+                    stage: 'completed', outputs: data.result,
+                });
+                stopPolling();
+            } else if (data.status === 'failed') {
+                handleProgressUpdate({
+                    type: 'error', error: data.error || 'Processing failed',
+                });
+                stopPolling();
+            } else if (data.progress) {
+                progressFill.style.width = `${data.progress}%`;
+                progressText.textContent = `${data.progress}%`;
+            }
+        } catch (e) {
+            console.warn('Polling error:', e);
+        }
+    }, POLLING_INTERVAL);
+}
+
+function stopPolling() {
+    if (pollingTimer) { clearInterval(pollingTimer); pollingTimer = null; }
+}
+
+function updateConnectionStatus(status) {
+    const indicator = document.getElementById('connectionStatus');
+    if (!indicator) return;
+    indicator.className = 'connection-status ' + status;
+    const labels = { connected: 'Connected', disconnected: 'Disconnected', polling: 'Polling' };
+    indicator.textContent = labels[status] || status;
+}
+
+// ══════════════════════════════════════════════════════════
+// PROGRESS & RESULTS
+// ══════════════════════════════════════════════════════════
+
 function handleProgressUpdate(data) {
-    const { stage, progress, message, output_file } = data;
+    const { type, stage, progress, message, outputs, error } = data;
 
-    // Update progress bar
-    progressFill.style.width = `${progress}%`;
-    progressText.textContent = `${progress}%`;
+    if (type === 'error') { showError(error || message || 'Processing failed'); return; }
+    if (type === 'completion') { handleProcessingComplete(outputs); return; }
 
-    // Update status message
-    statusMessage.textContent = message;
+    if (progress !== undefined) {
+        progressFill.style.width = `${progress}%`;
+        progressText.textContent = `${progress}%`;
+    }
 
-    // Update step indicators
-    updateStepIndicators(stage);
+    if (message || stage) statusMessage.textContent = message || stage;
 
-    // Add log
-    addLog(`[${stage}] ${message}`);
-
-    // Check if completed
-    if (stage === 'completed') {
-        handleProcessingComplete(output_file);
-    } else if (stage === 'failed') {
-        showError(message);
+    if (stage) {
+        updateStepIndicators(stage);
+        addLog('[' + stage + '] ' + (message || ''));
     }
 }
 
 function updateStepIndicators(stage) {
     const steps = {
-        'frame_extraction': 'step1',
-        'ai_analysis': 'step2',
-        'clip_detection': 'step3',
-        'video_generation': 'step4',
-        'completed': 'step4'
+        'extracting_frames': 'step1', 'frame_extraction': 'step1',
+        'analyzing_frames': 'step2', 'ai_analysis': 'step2',
+        'selecting_clips': 'step3', 'clip_detection': 'step3',
+        'editing_video': 'step4', 'applying_effects': 'step4',
+        'evaluating_quality': 'step4', 'finalizing': 'step4',
+        'video_generation': 'step4', 'completed': 'step4',
     };
 
     const stepId = steps[stage];
     if (!stepId) return;
 
-    // Mark all previous steps as completed
     const stepNumber = parseInt(stepId.replace('step', ''));
     for (let i = 1; i <= stepNumber; i++) {
         const step = document.getElementById(`step${i}`);
+        if (!step) continue;
         if (stage === 'completed') {
             step.classList.add('completed');
             step.classList.remove('active');
@@ -276,99 +599,156 @@ function updateStepIndicators(stage) {
     }
 }
 
-async function handleProcessingComplete(outputFile) {
-    addLog('🎉 処理が完了しました！');
+async function handleProcessingComplete(outputs) {
+    addLog('Processing complete!');
+    stopPolling();
+    if (websocket) websocket.close();
 
-    if (websocket) {
-        websocket.close();
-    }
-
-    // Show result section
     processingSection.style.display = 'none';
     resultSection.style.display = 'block';
 
-    // Setup download button
     downloadBtn.onclick = () => {
-        window.location.href = outputFile || `/api/download/${currentProjectId}`;
+        window.location.href = `/api/download/${currentProjectId}`;
     };
 
-    // Load project stats from v4 API
     try {
-        const response = await fetch(`/api/processing/status/${currentProjectId}`);
+        const response = await fetchWithTimeout(`/api/processing/status/${currentProjectId}`);
         const projectData = await response.json();
-
         const result = projectData.result || {};
-        const stats = `
-            <p><strong>処理時間:</strong> ${calculateProcessingTime(projectData)}</p>
-            <p><strong>検出されたクリップ数:</strong> ${result.clip_count || 0}</p>
-            <p><strong>品質スコア:</strong> ${result.quality_score ? result.quality_score.toFixed(1) : 'N/A'}</p>
+        const qualityScore = result.quality_score || 0;
+        const grade = getQualityGrade(qualityScore);
+        const warnings = result.warnings || [];
+
+        let statsHtml = `
+            <p><strong>Processing time:</strong> ${calculateProcessingTime(projectData)}</p>
+            <p><strong>Clips detected:</strong> ${result.clip_count || 0}</p>
+            <p><strong>Total duration:</strong> ${(result.total_duration || 0).toFixed(1)}s</p>
         `;
 
-        document.getElementById('resultStats').innerHTML = stats;
+        const qualityGaugeEl = document.getElementById('qualityGauge');
+        if (qualityGaugeEl) {
+            qualityGaugeEl.innerHTML = `
+                <div class="quality-gauge">
+                    <div class="quality-fill" style="width: ${Math.min(100, qualityScore)}%"></div>
+                </div>
+                <div class="quality-label">
+                    <span class="quality-grade grade-${grade.toLowerCase()}">${grade}</span>
+                    <span class="quality-value">${qualityScore.toFixed(1)}/100</span>
+                </div>
+            `;
+        }
+
+        const warningsEl = document.getElementById('warningsArea');
+        if (warningsEl && warnings.length > 0) {
+            warningsEl.style.display = 'block';
+            warningsEl.innerHTML = '<h4>Warnings</h4>' +
+                warnings.map(w => `<div class="warning-item">${w}</div>`).join('');
+        }
+
+        const suggestions = result.suggestions || [];
+        if (suggestions.length > 0) {
+            statsHtml += '<div class="suggestions"><h4>Suggestions</h4><ul>' +
+                suggestions.map(s => `<li>${s}</li>`).join('') + '</ul></div>';
+        }
+
+        document.getElementById('resultStats').innerHTML = statsHtml;
     } catch (error) {
         console.error('Failed to load project stats:', error);
     }
 }
 
+function getQualityGrade(score) {
+    if (score >= 90) return 'A';
+    if (score >= 75) return 'B';
+    if (score >= 60) return 'C';
+    if (score >= 40) return 'D';
+    if (score >= 20) return 'E';
+    return 'F';
+}
+
+async function handleCancelProcessing() {
+    if (!currentProjectId) return;
+    try {
+        const response = await fetchWithTimeout(`/api/projects/${currentProjectId}/cancel`, {
+            method: 'POST',
+        });
+        if (response.ok) {
+            addLog('Processing cancelled by user');
+            showError('Processing cancelled');
+        }
+    } catch (error) {
+        console.error('Cancel failed:', error);
+    }
+}
+
 function calculateProcessingTime(jobData) {
-    // Calculate time difference
     const start = new Date(jobData.created_at);
     const end = new Date();
-    const diff = Math.floor((end - start) / 1000); // seconds
-
-    const minutes = Math.floor(diff / 60);
-    const seconds = diff % 60;
-
-    return `${minutes}分${seconds}秒`;
+    const diff = Math.floor((end - start) / 1000);
+    return `${Math.floor(diff / 60)}m ${diff % 60}s`;
 }
+
+// ══════════════════════════════════════════════════════════
+// UI HELPERS
+// ══════════════════════════════════════════════════════════
 
 function showError(message) {
     uploadSection.style.display = 'none';
     processingSection.style.display = 'none';
     resultSection.style.display = 'none';
     errorSection.style.display = 'block';
+    if (authSection) authSection.style.display = 'none';
 
     document.getElementById('errorMessage').textContent = message;
-
-    if (websocket) {
-        websocket.close();
-    }
-
-    addLog(`❌ エラー: ${message}`);
+    stopPolling();
+    if (websocket) websocket.close();
+    addLog('Error: ' + message);
 }
 
 function resetToUpload() {
-    // Reset all sections
-    uploadSection.style.display = 'block';
     processingSection.style.display = 'none';
     resultSection.style.display = 'none';
     errorSection.style.display = 'none';
 
-    // Reset state
+    // If Firebase is enabled but user is logged out, show auth instead
+    if (firebaseEnabled && !currentUser) {
+        showAuthSection();
+    } else {
+        if (authSection) authSection.style.display = 'none';
+        uploadSection.style.display = 'block';
+    }
+
     currentProjectId = null;
     selectedFile = null;
     fileInput.value = '';
+    wsReconnectAttempts = 0;
 
     uploadArea.style.display = 'block';
     selectedFileDiv.style.display = 'none';
 
-    // Reset progress
     progressFill.style.width = '0%';
     progressText.textContent = '0%';
-    statusMessage.textContent = '準備中...';
+    statusMessage.textContent = 'Preparing...';
     logOutput.textContent = '';
 
-    // Reset steps
     for (let i = 1; i <= 4; i++) {
         const step = document.getElementById(`step${i}`);
-        step.classList.remove('active', 'completed');
+        if (step) step.classList.remove('active', 'completed');
     }
+
+    const warningsEl = document.getElementById('warningsArea');
+    if (warningsEl) warningsEl.style.display = 'none';
+    const qualityEl = document.getElementById('qualityGauge');
+    if (qualityEl) qualityEl.innerHTML = '';
+
+    stopPolling();
+    if (wsReconnectTimer) { clearTimeout(wsReconnectTimer); wsReconnectTimer = null; }
 }
 
 function handleDownload() {
     if (currentProjectId) {
         window.location.href = `/api/download/${currentProjectId}`;
-        addLog('📥 ダウンロードを開始しました');
+        addLog('Download started');
     }
 }
 
@@ -380,11 +760,9 @@ function addLog(message) {
 
 function formatFileSize(bytes) {
     if (bytes === 0) return '0 Bytes';
-
     const k = 1024;
     const sizes = ['Bytes', 'KB', 'MB', 'GB'];
     const i = Math.floor(Math.log(bytes) / Math.log(k));
-
     return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
 }
 
@@ -392,6 +770,6 @@ function formatFileSize(bytes) {
 window.addEventListener('beforeunload', (e) => {
     if (processingSection.style.display === 'block') {
         e.preventDefault();
-        e.returnValue = '処理中です。ページを離れますか？';
+        e.returnValue = 'Processing in progress. Leave page?';
     }
 });

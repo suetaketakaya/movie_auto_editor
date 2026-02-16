@@ -30,6 +30,7 @@ class Project:
     """
 
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
+    user_id: Optional[str] = None
     name: str = ""
     filename: str = ""
     upload_path: str = ""
@@ -95,6 +96,7 @@ class Project:
         """Convert to legacy active_jobs dict format."""
         result: dict = {
             "id": self.id,
+            "user_id": self.user_id,
             "name": self.name,
             "filename": self.filename,
             "upload_path": self.upload_path,

@@ -21,4 +21,4 @@ class TestHealthEndpoint:
         response = await async_client.get("/api/health")
 
         data = response.json()
-        assert data["version"] == "0.1.0"
+        assert data["version"] == "0.2.0"

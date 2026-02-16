@@ -50,6 +50,14 @@ nul
 .env
 .env.*
 
+# Firebase
+.firebase/
+*-firebase-adminsdk-*.json
+firebase-service-account.json
+
+# Firebase Hosting build
+public/
+
 # Media storage
 media/
 

@@ -19,6 +19,8 @@ class ProcessResult:
     clip_count: int = 0
     total_duration: float = 0.0
     error: Optional[str] = None
+    warnings: list = field(default_factory=list)
+    thumbnail_path: str = ""
 
     def to_dict(self) -> dict:
         return {
@@ -35,4 +37,6 @@ class ProcessResult:
             "clip_count": self.clip_count,
             "total_duration": self.total_duration,
             "error": self.error,
+            "warnings": self.warnings,
+            "thumbnail_path": self.thumbnail_path,
         }

@@ -12,20 +12,63 @@
 <body>
     <div class="container">
         <header>
-            <h1>CLIPMONTAGE</h1>
-            <p class="subtitle">Universal AI Video Montage Platform</p>
+            <div class="header-content">
+                <div class="header-title">
+                    <h1>CLIPMONTAGE</h1>
+                    <p class="subtitle">Universal AI Video Montage Platform</p>
+                </div>
+                <!-- User Bar (shown when logged in) -->
+                <div class="user-bar" id="userBar" style="display: none;">
+                    <img class="user-avatar" id="userAvatar" src="" alt="" />
+                    <span class="user-name" id="userName"></span>
+                    <button class="btn btn-secondary btn-small" id="logoutBtn">Logout</button>
+                </div>
+            </div>
         </header>
 
         <main>
-            <!-- Upload Section -->
-            <section class="upload-section" id="uploadSection">
+            <!-- Loading indicator (shown during Firebase init) -->
+            <div class="loading-indicator" id="loadingIndicator">
+                <div class="loading-spinner"></div>
+                <p>Initializing...</p>
+            </div>
+
+            <!-- Auth Section (shown when Firebase enabled and not logged in) -->
+            <section class="auth-section" id="authSection" style="display: none;">
+                <div class="auth-card">
+                    <h2>Sign In</h2>
+                    <p class="auth-subtitle">Sign in to start creating montages</p>
+                    <div class="auth-buttons">
+                        <button class="btn btn-google" id="googleSignInBtn">
+                            <svg class="google-icon" viewBox="0 0 24 24" width="20" height="20">
+                                <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z"/>
+                                <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                                <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
+                                <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+                            </svg>
+                            Sign in with Google
+                        </button>
+                        <div class="auth-divider"><span>or</span></div>
+                        <form class="email-auth-form" id="emailAuthForm">
+                            <input type="email" id="authEmail" placeholder="Email" class="auth-input" required>
+                            <input type="password" id="authPassword" placeholder="Password" class="auth-input" required>
+                            <button type="submit" class="btn btn-primary" id="emailSignInBtn">Sign In</button>
+                            <button type="button" class="btn btn-secondary" id="emailSignUpBtn">Create Account</button>
+                        </form>
+                    </div>
+                    <div class="auth-error" id="authError" style="display: none;"></div>
+                </div>
+            </section>
+
+            <!-- Upload Section (hidden initially, shown after auth check) -->
+            <section class="upload-section" id="uploadSection" style="display: none;">
                 <div class="upload-area" id="uploadArea">
                     <div class="upload-icon">📁</div>
-                    <h2>動画ファイルをドラッグ＆ドロップ</h2>
-                    <p>または</p>
-                    <label for="fileInput" class="btn btn-primary" style="cursor: pointer; user-select: none;">ファイルを選択</label>
-                    <input type="file" id="fileInput" accept=".mp4,.mkv,.avi,.mov" hidden>
-                    <p class="file-info">対応形式: MP4, MKV, AVI, MOV (最大20GB)</p>
+                    <h2>Drop video file here</h2>
+                    <p>or</p>
+                    <label for="fileInput" class="btn btn-primary" style="cursor: pointer; user-select: none;">Select File</label>
+                    <input type="file" id="fileInput" accept=".mp4,.mkv,.avi,.mov,.webm" hidden>
+                    <p class="file-info">Supported: MP4, MKV, AVI, MOV, WebM (max 20GB)</p>
                 </div>
 
                 <div class="selected-file" id="selectedFile" style="display: none;">
@@ -34,14 +77,18 @@
                         <div class="file-name" id="fileName"></div>
                         <div class="file-size" id="fileSize"></div>
                     </div>
-                    <button class="btn btn-success" id="uploadBtn">アップロード開始</button>
-                    <button class="btn btn-secondary" id="cancelBtn">キャンセル</button>
+                    <button class="btn btn-success" id="uploadBtn">Upload</button>
+                    <button class="btn btn-secondary" id="cancelBtn">Cancel</button>
                 </div>
             </section>
 
             <!-- Processing Section -->
             <section class="processing-section" id="processingSection" style="display: none;">
-                <h2>処理中...</h2>
+                <h2>Processing...</h2>
+
+                <div class="connection-bar">
+                    <span id="connectionStatus" class="connection-status disconnected">Connecting...</span>
+                </div>
 
                 <div class="progress-container">
                     <div class="progress-bar">
@@ -51,49 +98,57 @@
                 </div>
 
                 <div class="status-message" id="statusMessage">
-                    準備中...
+                    Preparing...
                 </div>
 
                 <div class="processing-steps">
                     <div class="step" id="step1">
                         <div class="step-icon">⏳</div>
-                        <div class="step-text">フレーム抽出</div>
+                        <div class="step-text">Frame Extraction</div>
                     </div>
                     <div class="step" id="step2">
                         <div class="step-icon">⏳</div>
-                        <div class="step-text">AI解析</div>
+                        <div class="step-text">AI Analysis</div>
                     </div>
                     <div class="step" id="step3">
                         <div class="step-icon">⏳</div>
-                        <div class="step-text">ハイライト検出</div>
+                        <div class="step-text">Highlight Detection</div>
                     </div>
                     <div class="step" id="step4">
                         <div class="step-icon">⏳</div>
-                        <div class="step-text">動画生成</div>
+                        <div class="step-text">Video Generation</div>
                     </div>
                 </div>
 
+                <div class="cancel-area">
+                    <button class="btn btn-danger" id="cancelProcessBtn">Cancel Processing</button>
+                </div>
+
                 <div class="log-container">
-                    <h3>処理ログ</h3>
+                    <h3>Processing Log</h3>
                     <div class="log-output" id="logOutput"></div>
                 </div>
             </section>
 
             <!-- Result Section -->
             <section class="result-section" id="resultSection" style="display: none;">
-                <h2>✅ 処理完了！</h2>
+                <h2>Processing Complete!</h2>
+
+                <div id="qualityGauge" class="quality-gauge-container"></div>
+
+                <div id="warningsArea" class="warnings-area" style="display: none;"></div>
 
                 <div class="result-info">
-                    <p>ハイライト動画が生成されました</p>
+                    <p>Highlight video has been generated</p>
                     <div class="result-stats" id="resultStats"></div>
                 </div>
 
                 <div class="result-actions">
                     <button class="btn btn-success btn-large" id="downloadBtn">
-                        📥 ダウンロード
+                        Download
                     </button>
                     <button class="btn btn-primary" id="newUploadBtn">
-                        🔄 新しい動画を処理
+                        Process New Video
                     </button>
                 </div>
 
@@ -104,15 +159,15 @@
 
             <!-- Error Section -->
             <section class="error-section" id="errorSection" style="display: none;">
-                <h2>❌ エラーが発生しました</h2>
+                <h2>Error</h2>
                 <div class="error-message" id="errorMessage"></div>
-                <button class="btn btn-primary" id="retryBtn">もう一度試す</button>
+                <button class="btn btn-primary" id="retryBtn">Try Again</button>
             </section>
         </main>
 
         <footer>
             <p>Powered by Ollama Vision AI & FFmpeg</p>
-            <p class="version">v2.0.0</p>
+            <p class="version">v2.2.0</p>
         </footer>
     </div>
 

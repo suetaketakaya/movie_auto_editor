@@ -8,8 +8,12 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Optional
 
+from dotenv import load_dotenv
 from pydantic import Field
 from pydantic_settings import BaseSettings
+
+# Load .env before any BaseSettings subclass reads env vars
+load_dotenv()
 
 
 class OllamaSettings(BaseSettings):
@@ -59,8 +63,9 @@ class AIAnalysisSettings(BaseSettings):
 
 class ExportSettings(BaseSettings):
     codec: str = "libx264"
-    crf: int = 18
+    crf: int = 15
     preset: str = "slow"
+    audio_bitrate: str = "320k"
     maintain_fps: bool = True
     maintain_resolution: bool = True
 
@@ -313,6 +318,16 @@ class ChapterGeneratorSettings(BaseSettings):
     min_chapter_length: int = 30
 
 
+class FirebaseSettings(BaseSettings):
+    enabled: bool = False
+    credentials_path: str = ""
+    project_id: str = ""
+    api_key: str = ""
+    auth_domain: str = ""
+
+    model_config = {"env_prefix": "FIREBASE_"}
+
+
 class DatabaseSettings(BaseSettings):
     url: str = "postgresql+asyncpg://clipmontage:clipmontage@localhost:5432/clipmontage"
     echo: bool = False
@@ -356,6 +371,9 @@ class Settings(BaseSettings):
     app_env: str = "development"
     secret_key: str = "change-me-in-production"
     persistence_backend: str = "memory"  # "postgres" or "memory"
+
+    # Authentication
+    firebase: FirebaseSettings = Field(default_factory=FirebaseSettings)
 
     # Infrastructure
     database: DatabaseSettings = Field(default_factory=DatabaseSettings)
@@ -403,6 +421,14 @@ class Settings(BaseSettings):
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8", "extra": "ignore"}
 
+    def validate_production(self) -> None:
+        """Validate critical settings for production environment."""
+        if self.app_env == "production" and self.secret_key == "change-me-in-production":
+            raise RuntimeError(
+                "FATAL: secret_key must be changed from default in production. "
+                "Set the SECRET_KEY environment variable."
+            )
+
     def to_legacy_dict(self) -> dict:
         """Convert to the legacy config dict format for backward compatibility."""
         return {
@@ -435,6 +461,7 @@ class Settings(BaseSettings):
                 "codec": self.export.codec,
                 "crf": self.export.crf,
                 "preset": self.export.preset,
+                "audio_bitrate": self.export.audio_bitrate,
                 "maintain_fps": self.export.maintain_fps,
                 "maintain_resolution": self.export.maintain_resolution,
             },
