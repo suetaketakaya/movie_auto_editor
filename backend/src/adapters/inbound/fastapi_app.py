@@ -72,6 +72,37 @@ app.add_middleware(
 _api_key = os.environ.get("API_KEY", "")
 
 
+def _cors_headers(request: Request) -> dict:
+    """Build CORS headers for early-return responses from auth middleware.
+
+    When the middleware short-circuits (returns without call_next), the
+    response bypasses CORSMiddleware.  We must add CORS headers manually
+    so the browser can read the JSON error body instead of seeing an
+    opaque CORS failure.
+    """
+    origin = request.headers.get("origin", "")
+    if not origin:
+        return {}
+    # Mirror the CORSMiddleware config: allow any origin (dev) or the
+    # configured allow-list (production).
+    if _origins == ["*"] or origin in _origins:
+        return {
+            "access-control-allow-origin": origin,
+            "access-control-allow-credentials": "true",
+            "vary": "Origin",
+        }
+    return {}
+
+
+def _auth_error(request: Request, detail: str) -> JSONResponse:
+    """Return a 401 with CORS headers so the browser can read the body."""
+    return JSONResponse(
+        status_code=401,
+        content={"detail": detail},
+        headers=_cors_headers(request),
+    )
+
+
 @app.middleware("http")
 async def auth_middleware(request: Request, call_next):
     """Authenticate via Firebase Bearer token or legacy API key.
@@ -98,7 +129,7 @@ async def auth_middleware(request: Request, call_next):
                 return await call_next(request)
         except Exception as exc:
             logger.warning("Bearer token verification failed: %s", exc)
-        return JSONResponse(status_code=401, content={"detail": "Invalid or expired token"})
+        return _auth_error(request, "Invalid or expired token")
 
     # --- Fallback: API Key ---
     if _api_key:
@@ -113,7 +144,7 @@ async def auth_middleware(request: Request, call_next):
                 display_name="API Key User",
             )
             return await call_next(request)
-        return JSONResponse(status_code=401, content={"detail": "Invalid or missing API key"})
+        return _auth_error(request, "Invalid or missing API key")
 
     # --- No auth configured (dev mode) — attach dev user ---
     if not settings.firebase.enabled:
@@ -126,7 +157,7 @@ async def auth_middleware(request: Request, call_next):
             pass
         return await call_next(request)
 
-    return JSONResponse(status_code=401, content={"detail": "Authentication required"})
+    return _auth_error(request, "Authentication required")
 
 
 @app.middleware("http")
