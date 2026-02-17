@@ -1,5 +1,10 @@
-// ClipMontage Frontend JavaScript
-// v2.2 — Firebase Authentication + Bearer tokens
+// ClipMontage Frontend — v3.0
+// SPA with Router, View Controllers, API Client
+// Firebase Auth + WebSocket + Polling preserved
+
+// ══════════════════════════════════════════════════════════
+// STATE
+// ══════════════════════════════════════════════════════════
 
 let currentProjectId = null;
 let websocket = null;
@@ -16,65 +21,263 @@ let idToken = null;
 let firebaseEnabled = false;
 let tokenRefreshTimer = null;
 
+// Auth modal state
+let authIsSignUp = false;
+
 const WS_MAX_RECONNECT = 5;
 const WS_INITIAL_BACKOFF = 1000;
 const POLLING_INTERVAL = 5000;
 const FETCH_TIMEOUT = 30000;
 
-// DOM Elements
-const uploadArea = document.getElementById('uploadArea');
-const fileInput = document.getElementById('fileInput');
-const selectedFileDiv = document.getElementById('selectedFile');
-const fileName = document.getElementById('fileName');
-const fileSize = document.getElementById('fileSize');
-const uploadBtn = document.getElementById('uploadBtn');
-const cancelBtn = document.getElementById('cancelBtn');
-
-const authSection = document.getElementById('authSection');
-const uploadSection = document.getElementById('uploadSection');
-const processingSection = document.getElementById('processingSection');
-const resultSection = document.getElementById('resultSection');
-const errorSection = document.getElementById('errorSection');
-
-const progressFill = document.getElementById('progressFill');
-const progressText = document.getElementById('progressText');
-const statusMessage = document.getElementById('statusMessage');
-const logOutput = document.getElementById('logOutput');
-
-const downloadBtn = document.getElementById('downloadBtn');
-const newUploadBtn = document.getElementById('newUploadBtn');
-const retryBtn = document.getElementById('retryBtn');
+const BACKEND_URL = window.location.hostname === 'localhost' ? '' : 'https://peaceful-metabolism-singer-attach.trycloudflare.com';
 
 // ══════════════════════════════════════════════════════════
-// INITIALIZATION
+// API CLIENT
 // ══════════════════════════════════════════════════════════
 
-document.addEventListener('DOMContentLoaded', async () => {
-    setupEventListeners();
-    await initFirebase();
-});
+function getAuthHeaders() {
+    const headers = {};
+    if (idToken) {
+        headers['Authorization'] = `Bearer ${idToken}`;
+    }
+    return headers;
+}
+
+function fetchWithTimeout(url, options = {}, timeout = FETCH_TIMEOUT) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeout);
+
+    const fullUrl = url.startsWith('/api') ? BACKEND_URL + url : url;
+    const authHeaders = getAuthHeaders();
+    const mergedHeaders = { ...(options.headers || {}), ...authHeaders };
+
+    return fetch(fullUrl, {
+        ...options,
+        headers: mergedHeaders,
+        signal: controller.signal,
+    }).finally(() => clearTimeout(timer));
+}
+
+const API = {
+    async getProjects() {
+        const resp = await fetchWithTimeout('/api/projects');
+        if (!resp.ok) throw new Error('Failed to load projects');
+        return resp.json();
+    },
+
+    async getProject(id) {
+        const resp = await fetchWithTimeout(`/api/projects/${id}`);
+        if (!resp.ok) throw new Error('Failed to load project');
+        return resp.json();
+    },
+
+    async deleteProject(id) {
+        const resp = await fetchWithTimeout(`/api/projects/${id}`, { method: 'DELETE' });
+        if (!resp.ok) throw new Error('Failed to delete project');
+        return resp.json();
+    },
+
+    async getDashboardStats() {
+        const resp = await fetchWithTimeout('/api/dashboard/stats');
+        if (!resp.ok) throw new Error('Failed to load stats');
+        return resp.json();
+    },
+
+    async uploadFile(formData) {
+        return fetchWithTimeout('/api/processing/upload', {
+            method: 'POST',
+            body: formData,
+        }, 120000);
+    },
+
+    async startProcessing(projectId) {
+        return fetchWithTimeout('/api/processing/start', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                project_id: projectId,
+                content_type: 'fps_montage',
+            }),
+        });
+    },
+
+    async getStatus(projectId) {
+        return fetchWithTimeout(`/api/processing/status/${projectId}`);
+    },
+
+    async cancelProject(projectId) {
+        return fetchWithTimeout(`/api/projects/${projectId}/cancel`, { method: 'POST' });
+    },
+};
+
+// ══════════════════════════════════════════════════════════
+// ROUTER
+// ══════════════════════════════════════════════════════════
+
+const Router = {
+    currentView: null,
+
+    navigate(viewName, opts = {}) {
+        // Hide all app views inside content-area
+        const appViews = ['dashboard', 'upload', 'processing', 'result', 'error'];
+        appViews.forEach(v => {
+            const el = document.getElementById(`view-${v}`);
+            if (el) el.style.display = 'none';
+        });
+
+        // Show target view
+        const target = document.getElementById(`view-${viewName}`);
+        if (target) target.style.display = 'block';
+
+        this.currentView = viewName;
+
+        // Update page title
+        const titleMap = {
+            dashboard: 'Dashboard',
+            upload: 'New Project',
+            processing: 'Processing',
+            result: 'Result',
+            error: 'Error',
+        };
+        const pageTitle = document.getElementById('pageTitle');
+        if (pageTitle) pageTitle.textContent = titleMap[viewName] || viewName;
+
+        // Update sidebar active state
+        document.querySelectorAll('.nav-item').forEach(item => {
+            item.classList.toggle('active', item.dataset.view === viewName);
+        });
+
+        // Close mobile sidebar
+        closeMobileSidebar();
+
+        // Run view init
+        if (viewName === 'dashboard') DashboardView.init();
+        if (viewName === 'upload') UploadView.init();
+        if (viewName === 'processing') ProcessingView.init(opts);
+        if (viewName === 'result') ResultView.init(opts);
+    },
+};
+
+// ══════════════════════════════════════════════════════════
+// LAYOUT HELPERS
+// ══════════════════════════════════════════════════════════
+
+function showLanding() {
+    document.getElementById('view-landing').style.display = 'block';
+    document.getElementById('view-loading').style.display = 'none';
+    document.getElementById('app-shell').style.display = 'none';
+}
+
+function showApp() {
+    document.getElementById('view-landing').style.display = 'none';
+    document.getElementById('view-loading').style.display = 'none';
+    document.getElementById('app-shell').style.display = 'flex';
+    Router.navigate('dashboard');
+}
+
+function showLoading() {
+    document.getElementById('view-landing').style.display = 'none';
+    document.getElementById('view-loading').style.display = 'block';
+    document.getElementById('app-shell').style.display = 'none';
+}
 
 function hideLoading() {
-    const el = document.getElementById('loadingIndicator');
-    if (el) el.style.display = 'none';
+    document.getElementById('view-loading').style.display = 'none';
 }
+
+// Auth modal
+function openAuthModal() {
+    document.getElementById('auth-modal').style.display = 'flex';
+    clearAuthError();
+}
+
+function closeAuthModal() {
+    document.getElementById('auth-modal').style.display = 'none';
+}
+
+function toggleAuthMode() {
+    authIsSignUp = !authIsSignUp;
+    const title = document.getElementById('authModalTitle');
+    const subtitle = document.getElementById('authModalSubtitle');
+    const submitBtn = document.getElementById('emailSignInBtn');
+    const toggleBtn = document.getElementById('authToggleBtn');
+
+    if (authIsSignUp) {
+        title.textContent = 'Sign Up';
+        subtitle.textContent = 'Create an account to get started';
+        submitBtn.textContent = 'Sign Up';
+        toggleBtn.innerHTML = 'Already have an account? <strong>Sign In</strong>';
+    } else {
+        title.textContent = 'Sign In';
+        subtitle.textContent = 'Sign in to start creating montages';
+        submitBtn.textContent = 'Sign In';
+        toggleBtn.innerHTML = "Don't have an account? <strong>Sign Up</strong>";
+    }
+    clearAuthError();
+}
+
+// Mobile sidebar
+function openMobileSidebar() {
+    const sidebar = document.getElementById('sidebar');
+    const overlay = document.getElementById('sidebarOverlay');
+    if (sidebar) sidebar.classList.add('open');
+    if (overlay) overlay.classList.add('active');
+}
+
+function closeMobileSidebar() {
+    const sidebar = document.getElementById('sidebar');
+    const overlay = document.getElementById('sidebarOverlay');
+    if (sidebar) sidebar.classList.remove('open');
+    if (overlay) overlay.classList.remove('active');
+}
+
+// Toast notifications
+function showToast(message, type = 'success') {
+    const container = document.getElementById('toastContainer');
+    if (!container) return;
+    const toast = document.createElement('div');
+    toast.className = `toast toast-${type}`;
+    toast.textContent = message;
+    container.appendChild(toast);
+    setTimeout(() => {
+        toast.style.opacity = '0';
+        toast.style.transition = 'opacity 0.3s ease';
+        setTimeout(() => toast.remove(), 300);
+    }, 3500);
+}
+
+// ══════════════════════════════════════════════════════════
+// FIREBASE AUTH (preserved)
+// ══════════════════════════════════════════════════════════
 
 async function initFirebase() {
     try {
-        const resp = await fetch('/api/config/firebase');
-        const config = await resp.json();
+        let config;
+        try {
+            const resp = await fetch(BACKEND_URL + '/api/config/firebase');
+            if (resp.ok && resp.headers.get('content-type')?.includes('application/json')) {
+                config = await resp.json();
+            }
+        } catch (_) { /* backend not reachable */ }
+
+        if (!config) {
+            config = {
+                enabled: true,
+                apiKey: 'REDACTED_FIREBASE_API_KEY',
+                authDomain: 'moviecutter.firebaseapp.com',
+                projectId: 'moviecutter',
+            };
+        }
 
         if (!config.enabled) {
             firebaseEnabled = false;
             hideLoading();
-            showUploadSection();
-            // Firebase auth disabled — dev mode
+            showApp();
             return;
         }
 
         firebaseEnabled = true;
 
-        // Dynamically load Firebase SDK
         await loadScript('https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js');
         await loadScript('https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js');
 
@@ -85,9 +288,7 @@ async function initFirebase() {
         });
         firebaseAuth = firebase.auth();
 
-        // Listen for auth state changes
         firebaseAuth.onAuthStateChanged(async (user) => {
-            // Clear any existing token refresh timer
             if (tokenRefreshTimer) {
                 clearInterval(tokenRefreshTimer);
                 tokenRefreshTimer = null;
@@ -98,15 +299,14 @@ async function initFirebase() {
             if (user) {
                 currentUser = user;
                 idToken = await user.getIdToken();
-                showLoggedIn(user);
-                showUploadSection();
+                updateUserUI(user);
+                closeAuthModal();
+                showApp();
 
-                // Refresh token periodically (every 50 minutes)
                 tokenRefreshTimer = setInterval(async () => {
                     if (currentUser) {
                         try {
                             idToken = await currentUser.getIdToken(true);
-                            // token refreshed
                         } catch (e) {
                             console.warn('Token refresh failed:', e);
                         }
@@ -115,14 +315,14 @@ async function initFirebase() {
             } else {
                 currentUser = null;
                 idToken = null;
-                showAuthSection();
+                showLanding();
             }
         });
     } catch (e) {
         console.error('Firebase init failed:', e);
         firebaseEnabled = false;
         hideLoading();
-        showUploadSection();
+        showApp();
     }
 }
 
@@ -136,39 +336,59 @@ function loadScript(src) {
     });
 }
 
-// ══════════════════════════════════════════════════════════
-// AUTH UI
-// ══════════════════════════════════════════════════════════
-
-function showAuthSection() {
-    authSection.style.display = 'block';
-    uploadSection.style.display = 'none';
-    processingSection.style.display = 'none';
-    resultSection.style.display = 'none';
-    errorSection.style.display = 'none';
-    document.getElementById('userBar').style.display = 'none';
-}
-
-function showUploadSection() {
-    if (authSection) authSection.style.display = 'none';
-    uploadSection.style.display = 'block';
-}
-
-function showLoggedIn(user) {
-    const userBar = document.getElementById('userBar');
-    const userAvatar = document.getElementById('userAvatar');
-    const userNameEl = document.getElementById('userName');
-
-    if (userBar) userBar.style.display = 'flex';
-    if (userNameEl) userNameEl.textContent = user.displayName || user.email || 'User';
-    if (userAvatar) {
+function updateUserUI(user) {
+    const avatar = document.getElementById('userAvatar');
+    const nameEl = document.getElementById('userName');
+    if (nameEl) nameEl.textContent = user.displayName || user.email || 'User';
+    if (avatar) {
         if (user.photoURL) {
-            userAvatar.src = user.photoURL;
-            userAvatar.style.display = 'block';
+            avatar.src = user.photoURL;
+            avatar.style.display = 'block';
         } else {
-            userAvatar.style.display = 'none';
+            avatar.style.display = 'none';
         }
     }
+}
+
+// Auth actions
+async function signInWithGoogle() {
+    clearAuthError();
+    try {
+        const provider = new firebase.auth.GoogleAuthProvider();
+        await firebaseAuth.signInWithPopup(provider);
+    } catch (e) {
+        showAuthError(e.message);
+    }
+}
+
+async function handleEmailSubmit() {
+    clearAuthError();
+    const email = document.getElementById('authEmail').value;
+    const password = document.getElementById('authPassword').value;
+    try {
+        if (authIsSignUp) {
+            await firebaseAuth.createUserWithEmailAndPassword(email, password);
+        } else {
+            await firebaseAuth.signInWithEmailAndPassword(email, password);
+        }
+    } catch (e) {
+        showAuthError(e.message);
+    }
+}
+
+async function signOut() {
+    stopPolling();
+    if (websocket) {
+        websocket.close();
+        websocket = null;
+    }
+    currentProjectId = null;
+
+    if (firebaseAuth) {
+        await firebaseAuth.signOut();
+    }
+    currentUser = null;
+    idToken = null;
 }
 
 function showAuthError(message) {
@@ -185,262 +405,338 @@ function clearAuthError() {
 }
 
 // ══════════════════════════════════════════════════════════
-// AUTH ACTIONS
+// DASHBOARD VIEW
 // ══════════════════════════════════════════════════════════
 
-async function signInWithGoogle() {
-    clearAuthError();
-    try {
-        const provider = new firebase.auth.GoogleAuthProvider();
-        await firebaseAuth.signInWithPopup(provider);
-    } catch (e) {
-        showAuthError(e.message);
-    }
-}
+const DashboardView = {
+    async init() {
+        try {
+            // Load stats and projects in parallel
+            const [stats, projects] = await Promise.all([
+                API.getDashboardStats().catch(() => null),
+                API.getProjects().catch(() => []),
+            ]);
 
-async function signInWithEmail() {
-    clearAuthError();
-    const email = document.getElementById('authEmail').value;
-    const password = document.getElementById('authPassword').value;
-    try {
-        await firebaseAuth.signInWithEmailAndPassword(email, password);
-    } catch (e) {
-        showAuthError(e.message);
-    }
-}
+            if (stats) {
+                document.getElementById('statTotal').textContent = stats.total_projects ?? 0;
+                document.getElementById('statCompleted').textContent = stats.completed ?? 0;
+                document.getElementById('statProcessing').textContent = stats.processing ?? 0;
+                document.getElementById('statFailed').textContent = stats.failed ?? 0;
+            }
 
-async function signUpWithEmail() {
-    clearAuthError();
-    const email = document.getElementById('authEmail').value;
-    const password = document.getElementById('authPassword').value;
-    try {
-        await firebaseAuth.createUserWithEmailAndPassword(email, password);
-    } catch (e) {
-        showAuthError(e.message);
-    }
-}
+            this.renderProjects(projects);
+        } catch (e) {
+            console.error('Dashboard load error:', e);
+        }
+    },
 
-async function signOut() {
-    // Clean up processing state
-    stopPolling();
-    if (websocket) {
-        websocket.close();
-        websocket = null;
-    }
-    currentProjectId = null;
+    renderProjects(projects) {
+        const grid = document.getElementById('projectGrid');
+        const empty = document.getElementById('emptyState');
 
-    if (firebaseAuth) {
-        await firebaseAuth.signOut();
-    }
-    currentUser = null;
-    idToken = null;
-    // onAuthStateChanged will fire and call showAuthSection()
-}
-
-// ══════════════════════════════════════════════════════════
-// AUTHENTICATED FETCH
-// ══════════════════════════════════════════════════════════
-
-function getAuthHeaders() {
-    const headers = {};
-    if (idToken) {
-        headers['Authorization'] = `Bearer ${idToken}`;
-    }
-    return headers;
-}
-
-function fetchWithTimeout(url, options = {}, timeout = FETCH_TIMEOUT) {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeout);
-
-    // Merge auth headers
-    const authHeaders = getAuthHeaders();
-    const mergedHeaders = { ...(options.headers || {}), ...authHeaders };
-
-    return fetch(url, {
-        ...options,
-        headers: mergedHeaders,
-        signal: controller.signal,
-    }).finally(() => clearTimeout(timer));
-}
-
-// ══════════════════════════════════════════════════════════
-// EVENT LISTENERS
-// ══════════════════════════════════════════════════════════
-
-function setupEventListeners() {
-    if (fileInput) fileInput.addEventListener('change', handleFileSelect);
-
-    if (uploadArea) {
-        uploadArea.addEventListener('dragover', handleDragOver);
-        uploadArea.addEventListener('dragleave', handleDragLeave);
-        uploadArea.addEventListener('drop', handleDrop);
-    }
-
-    if (uploadBtn) uploadBtn.addEventListener('click', handleUpload);
-    if (cancelBtn) cancelBtn.addEventListener('click', handleCancel);
-    if (downloadBtn) downloadBtn.addEventListener('click', handleDownload);
-    if (newUploadBtn) newUploadBtn.addEventListener('click', resetToUpload);
-    if (retryBtn) retryBtn.addEventListener('click', resetToUpload);
-
-    const cancelProcessBtn = document.getElementById('cancelProcessBtn');
-    if (cancelProcessBtn) cancelProcessBtn.addEventListener('click', handleCancelProcessing);
-
-    // Auth buttons
-    const googleBtn = document.getElementById('googleSignInBtn');
-    if (googleBtn) googleBtn.addEventListener('click', signInWithGoogle);
-
-    const emailForm = document.getElementById('emailAuthForm');
-    if (emailForm) emailForm.addEventListener('submit', (e) => { e.preventDefault(); signInWithEmail(); });
-
-    const signUpBtn = document.getElementById('emailSignUpBtn');
-    if (signUpBtn) signUpBtn.addEventListener('click', signUpWithEmail);
-
-    const logoutBtn = document.getElementById('logoutBtn');
-    if (logoutBtn) logoutBtn.addEventListener('click', signOut);
-
-    // Event listeners initialized
-}
-
-// ══════════════════════════════════════════════════════════
-// FILE HANDLING
-// ══════════════════════════════════════════════════════════
-
-function handleFileSelect(e) {
-    const file = e.target.files[0];
-    if (file) setSelectedFile(file);
-}
-
-function handleDragOver(e) {
-    e.preventDefault();
-    e.stopPropagation();
-    uploadArea.classList.add('dragover');
-}
-
-function handleDragLeave(e) {
-    e.preventDefault();
-    e.stopPropagation();
-    uploadArea.classList.remove('dragover');
-}
-
-function handleDrop(e) {
-    e.preventDefault();
-    e.stopPropagation();
-    uploadArea.classList.remove('dragover');
-    const file = e.dataTransfer.files[0];
-    if (file) setSelectedFile(file);
-}
-
-function setSelectedFile(file) {
-    selectedFile = file;
-    const validExtensions = ['.mp4', '.mkv', '.avi', '.mov', '.webm'];
-    const fileExt = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
-
-    if (!validExtensions.includes(fileExt)) {
-        showError('Invalid file format. Supported: MP4, MKV, AVI, MOV, WebM');
-        return;
-    }
-
-    const maxSize = 20 * 1024 * 1024 * 1024;
-    if (file.size > maxSize) {
-        showError('File too large. Maximum size: 20GB');
-        return;
-    }
-
-    fileName.textContent = file.name;
-    fileSize.textContent = formatFileSize(file.size);
-    uploadArea.style.display = 'none';
-    selectedFileDiv.style.display = 'block';
-}
-
-function handleCancel() {
-    selectedFile = null;
-    fileInput.value = '';
-    uploadArea.style.display = 'block';
-    selectedFileDiv.style.display = 'none';
-}
-
-// ══════════════════════════════════════════════════════════
-// UPLOAD & PROCESSING
-// ══════════════════════════════════════════════════════════
-
-async function handleUpload() {
-    if (!selectedFile) return;
-
-    const formData = new FormData();
-    formData.append('file', selectedFile);
-    formData.append('name', selectedFile.name);
-    formData.append('content_type', 'fps_montage');
-
-    try {
-        uploadBtn.disabled = true;
-        uploadBtn.textContent = 'Uploading...';
-
-        const response = await fetchWithTimeout('/api/processing/upload', {
-            method: 'POST',
-            body: formData,
-        }, 120000);
-
-        if (!response.ok) {
-            const errorData = await response.json().catch(() => ({}));
-            throw new Error(errorData.detail || 'Upload failed');
+        if (!projects || projects.length === 0) {
+            grid.innerHTML = '';
+            grid.style.display = 'none';
+            empty.style.display = 'block';
+            return;
         }
 
-        const data = await response.json();
-        currentProjectId = data.project_id;
-        addLog('Upload complete: ' + selectedFile.name);
-        await startProcessing();
+        empty.style.display = 'none';
+        grid.style.display = 'grid';
 
-    } catch (error) {
-        if (error.name === 'AbortError') {
-            showUploadError('Upload timed out. Please try again.');
-        } else {
-            showUploadError(error.message);
-        }
-    } finally {
-        uploadBtn.disabled = false;
-        uploadBtn.textContent = 'Upload';
-    }
-}
+        // Sort by created_at descending
+        const sorted = [...projects].sort((a, b) =>
+            new Date(b.created_at) - new Date(a.created_at)
+        );
 
-function showUploadError(message) {
-    uploadSection.style.display = 'none';
-    errorSection.style.display = 'block';
-    document.getElementById('errorMessage').textContent = message;
-    addLog('Error: ' + message);
-}
+        grid.innerHTML = sorted.map(p => {
+            const date = new Date(p.created_at).toLocaleDateString('en-US', {
+                month: 'short', day: 'numeric', year: 'numeric',
+            });
 
-async function startProcessing() {
-    try {
-        uploadSection.style.display = 'none';
-        processingSection.style.display = 'block';
-        addLog('Starting processing...');
+            const progressHtml = (p.status === 'processing' && p.progress > 0)
+                ? `<div class="project-progress"><div class="project-progress-fill" style="width:${p.progress}%"></div></div>`
+                : '';
 
-        connectWebSocket();
+            return `
+                <div class="project-card" data-id="${p.id}" data-status="${p.status}">
+                    <div class="project-card-header">
+                        <span class="project-card-name">${this.escapeHtml(p.name)}</span>
+                        <span class="project-status status-${p.status}">${p.status}</span>
+                    </div>
+                    <div class="project-card-meta">
+                        <span class="project-card-date">${date}</span>
+                        <div class="project-card-actions">
+                            <button class="project-delete-btn" data-delete-id="${p.id}" title="Delete">Delete</button>
+                        </div>
+                    </div>
+                    ${progressHtml}
+                </div>
+            `;
+        }).join('');
 
-        const response = await fetchWithTimeout('/api/processing/start', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                project_id: currentProjectId,
-                content_type: 'fps_montage',
-            }),
+        // Bind click events
+        grid.querySelectorAll('.project-card').forEach(card => {
+            card.addEventListener('click', (e) => {
+                if (e.target.classList.contains('project-delete-btn')) return;
+                const id = card.dataset.id;
+                const status = card.dataset.status;
+                this.openProject(id, status);
+            });
         });
 
-        if (!response.ok) {
-            const errorData = await response.json().catch(() => ({}));
-            throw new Error(errorData.detail || 'Failed to start processing');
-        }
+        grid.querySelectorAll('.project-delete-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                this.deleteProject(btn.dataset.deleteId);
+            });
+        });
+    },
 
-        const data = await response.json();
-        addLog('Processing started (task: ' + data.task_id + ')');
-    } catch (error) {
-        showError(error.message);
-    }
-}
+    openProject(id, status) {
+        currentProjectId = id;
+        if (status === 'completed') {
+            Router.navigate('result', { projectId: id });
+        } else if (status === 'processing') {
+            Router.navigate('processing', { projectId: id, resume: true });
+        } else if (status === 'failed') {
+            Router.navigate('error');
+            document.getElementById('errorMessage').textContent = 'This project failed during processing.';
+        }
+    },
+
+    async deleteProject(id) {
+        if (!confirm('Delete this project?')) return;
+        try {
+            await API.deleteProject(id);
+            showToast('Project deleted');
+            this.init(); // refresh
+        } catch (e) {
+            showToast('Failed to delete project', 'error');
+        }
+    },
+
+    escapeHtml(str) {
+        const div = document.createElement('div');
+        div.textContent = str;
+        return div.innerHTML;
+    },
+};
 
 // ══════════════════════════════════════════════════════════
-// WEBSOCKET (with token auth)
+// UPLOAD VIEW
+// ══════════════════════════════════════════════════════════
+
+const UploadView = {
+    init() {
+        selectedFile = null;
+        const fileInput = document.getElementById('fileInput');
+        if (fileInput) fileInput.value = '';
+
+        const uploadArea = document.getElementById('uploadArea');
+        const selectedFileDiv = document.getElementById('selectedFile');
+        if (uploadArea) uploadArea.style.display = 'block';
+        if (selectedFileDiv) selectedFileDiv.style.display = 'none';
+    },
+
+    setFile(file) {
+        const validExtensions = ['.mp4', '.mkv', '.avi', '.mov', '.webm'];
+        const fileExt = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
+
+        if (!validExtensions.includes(fileExt)) {
+            showToast('Invalid file format. Supported: MP4, MKV, AVI, MOV, WebM', 'error');
+            return;
+        }
+
+        const maxSize = 20 * 1024 * 1024 * 1024;
+        if (file.size > maxSize) {
+            showToast('File too large. Maximum size: 20 GB', 'error');
+            return;
+        }
+
+        selectedFile = file;
+        document.getElementById('fileName').textContent = file.name;
+        document.getElementById('fileSize').textContent = formatFileSize(file.size);
+        document.getElementById('uploadArea').style.display = 'none';
+        document.getElementById('selectedFile').style.display = 'block';
+    },
+
+    cancelFile() {
+        selectedFile = null;
+        document.getElementById('fileInput').value = '';
+        document.getElementById('uploadArea').style.display = 'block';
+        document.getElementById('selectedFile').style.display = 'none';
+    },
+
+    async upload() {
+        if (!selectedFile) return;
+
+        const uploadBtn = document.getElementById('uploadBtn');
+        const formData = new FormData();
+        formData.append('file', selectedFile);
+        formData.append('name', selectedFile.name);
+        formData.append('content_type', 'fps_montage');
+
+        try {
+            uploadBtn.disabled = true;
+            uploadBtn.textContent = 'Uploading...';
+
+            const response = await API.uploadFile(formData);
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({}));
+                throw new Error(errorData.detail || 'Upload failed');
+            }
+
+            const data = await response.json();
+            currentProjectId = data.project_id;
+            addLog('Upload complete: ' + selectedFile.name);
+
+            // Navigate to processing, then start
+            Router.navigate('processing', { projectId: currentProjectId, start: true });
+        } catch (error) {
+            if (error.name === 'AbortError') {
+                showToast('Upload timed out. Please try again.', 'error');
+            } else {
+                showToast(error.message, 'error');
+            }
+        } finally {
+            uploadBtn.disabled = false;
+            uploadBtn.textContent = 'Upload & Process';
+        }
+    },
+};
+
+// ══════════════════════════════════════════════════════════
+// PROCESSING VIEW
+// ══════════════════════════════════════════════════════════
+
+const ProcessingView = {
+    async init(opts = {}) {
+        // Reset UI
+        const progressFill = document.getElementById('progressFill');
+        const progressText = document.getElementById('progressText');
+        const statusMessage = document.getElementById('statusMessage');
+        const logOutput = document.getElementById('logOutput');
+
+        if (!opts.resume) {
+            if (progressFill) progressFill.style.width = '0%';
+            if (progressText) progressText.textContent = '0%';
+            if (statusMessage) statusMessage.textContent = 'Preparing...';
+            if (logOutput) logOutput.textContent = '';
+            for (let i = 1; i <= 4; i++) {
+                const step = document.getElementById(`step${i}`);
+                if (step) step.classList.remove('active', 'completed');
+            }
+        }
+
+        wsReconnectAttempts = 0;
+
+        if (opts.projectId) currentProjectId = opts.projectId;
+
+        if (opts.start) {
+            await this.startProcessing();
+        } else if (opts.resume) {
+            // Re-attach WebSocket for an in-progress project
+            connectWebSocket();
+        }
+    },
+
+    async startProcessing() {
+        try {
+            addLog('Starting processing...');
+            connectWebSocket();
+
+            const response = await API.startProcessing(currentProjectId);
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({}));
+                throw new Error(errorData.detail || 'Failed to start processing');
+            }
+
+            const data = await response.json();
+            addLog('Processing started (task: ' + data.task_id + ')');
+        } catch (error) {
+            showError(error.message);
+        }
+    },
+};
+
+// ══════════════════════════════════════════════════════════
+// RESULT VIEW
+// ══════════════════════════════════════════════════════════
+
+const ResultView = {
+    async init(opts = {}) {
+        if (opts.projectId) currentProjectId = opts.projectId;
+
+        // Set up download button
+        const downloadBtn = document.getElementById('downloadBtn');
+        if (downloadBtn) {
+            downloadBtn.onclick = () => handleDownload();
+        }
+
+        try {
+            const response = await API.getStatus(currentProjectId);
+            const projectData = await response.json();
+            const result = projectData.result || {};
+            const qualityScore = result.quality_score || 0;
+            const grade = getQualityGrade(qualityScore);
+            const warnings = result.warnings || [];
+
+            // Quality gauge
+            const qualityGaugeEl = document.getElementById('qualityGauge');
+            if (qualityGaugeEl) {
+                qualityGaugeEl.innerHTML = `
+                    <div class="quality-gauge">
+                        <div class="quality-fill" style="width: ${Math.min(100, qualityScore)}%"></div>
+                    </div>
+                    <div class="quality-label">
+                        <span class="quality-grade grade-${grade.toLowerCase()}">${grade}</span>
+                        <span class="quality-value">${qualityScore.toFixed(1)}/100</span>
+                    </div>
+                `;
+            }
+
+            // Warnings
+            const warningsEl = document.getElementById('warningsArea');
+            if (warningsEl) {
+                if (warnings.length > 0) {
+                    warningsEl.style.display = 'block';
+                    warningsEl.innerHTML = '<h4>Warnings</h4>' +
+                        warnings.map(w => `<div class="warning-item">${escapeHtml(w)}</div>`).join('');
+                } else {
+                    warningsEl.style.display = 'none';
+                }
+            }
+
+            // Stats
+            let statsHtml = `
+                <p><strong>Processing time:</strong> ${calculateProcessingTime(projectData)}</p>
+                <p><strong>Clips detected:</strong> ${result.clip_count || 0}</p>
+                <p><strong>Total duration:</strong> ${(result.total_duration || 0).toFixed(1)}s</p>
+            `;
+
+            const suggestions = result.suggestions || [];
+            if (suggestions.length > 0) {
+                statsHtml += '<div class="suggestions"><h4>Suggestions</h4><ul>' +
+                    suggestions.map(s => `<li>${escapeHtml(s)}</li>`).join('') + '</ul></div>';
+            }
+
+            document.getElementById('resultStats').innerHTML = statsHtml;
+
+            // Video preview
+            const videoPreview = document.getElementById('videoPreview');
+            if (videoPreview && result.output_path) {
+                const videoUrl = `${BACKEND_URL}/api/download/${currentProjectId}`;
+                videoPreview.innerHTML = `<video controls src="${videoUrl}"></video>`;
+            }
+        } catch (error) {
+            console.error('Failed to load project stats:', error);
+        }
+    },
+};
+
+// ══════════════════════════════════════════════════════════
+// WEBSOCKET (preserved with token auth)
 // ══════════════════════════════════════════════════════════
 
 function connectWebSocket() {
@@ -449,10 +745,15 @@ function connectWebSocket() {
         wsReconnectTimer = null;
     }
 
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    let wsUrl = `${protocol}//${window.location.host}/ws/${currentProjectId}`;
+    let wsUrl;
+    if (BACKEND_URL) {
+        const backendWs = BACKEND_URL.replace(/^https:/, 'wss:').replace(/^http:/, 'ws:');
+        wsUrl = `${backendWs}/ws/${currentProjectId}`;
+    } else {
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        wsUrl = `${protocol}//${window.location.host}/ws/${currentProjectId}`;
+    }
 
-    // Pass token as query param for WebSocket auth
     if (idToken) {
         wsUrl += `?token=${encodeURIComponent(idToken)}`;
     }
@@ -482,7 +783,7 @@ function connectWebSocket() {
 
     websocket.onclose = () => {
         updateConnectionStatus('disconnected');
-        if (processingSection.style.display === 'block') {
+        if (Router.currentView === 'processing') {
             attemptReconnect();
         }
     };
@@ -499,7 +800,6 @@ function attemptReconnect() {
     wsReconnectAttempts++;
     const backoff = WS_INITIAL_BACKOFF * Math.pow(2, wsReconnectAttempts - 1);
     addLog('Reconnecting WebSocket (' + wsReconnectAttempts + '/' + WS_MAX_RECONNECT + ')...');
-
     wsReconnectTimer = setTimeout(() => connectWebSocket(), backoff);
 }
 
@@ -509,7 +809,7 @@ function startPolling() {
     pollingTimer = setInterval(async () => {
         if (!currentProjectId) { stopPolling(); return; }
         try {
-            const response = await fetchWithTimeout(`/api/processing/status/${currentProjectId}`);
+            const response = await API.getStatus(currentProjectId);
             if (!response.ok) return;
 
             const data = await response.json();
@@ -525,8 +825,10 @@ function startPolling() {
                 });
                 stopPolling();
             } else if (data.progress) {
-                progressFill.style.width = `${data.progress}%`;
-                progressText.textContent = `${data.progress}%`;
+                const progressFill = document.getElementById('progressFill');
+                const progressText = document.getElementById('progressText');
+                if (progressFill) progressFill.style.width = `${data.progress}%`;
+                if (progressText) progressText.textContent = `${data.progress}%`;
             }
         } catch (e) {
             console.warn('Polling error:', e);
@@ -556,12 +858,18 @@ function handleProgressUpdate(data) {
     if (type === 'error') { showError(error || message || 'Processing failed'); return; }
     if (type === 'completion') { handleProcessingComplete(outputs); return; }
 
+    const progressFill = document.getElementById('progressFill');
+    const progressText = document.getElementById('progressText');
+    const statusMessage = document.getElementById('statusMessage');
+
     if (progress !== undefined) {
-        progressFill.style.width = `${progress}%`;
-        progressText.textContent = `${progress}%`;
+        if (progressFill) progressFill.style.width = `${progress}%`;
+        if (progressText) progressText.textContent = `${progress}%`;
     }
 
-    if (message || stage) statusMessage.textContent = message || stage;
+    if (message || stage) {
+        if (statusMessage) statusMessage.textContent = message || stage;
+    }
 
     if (stage) {
         updateStepIndicators(stage);
@@ -599,82 +907,21 @@ function updateStepIndicators(stage) {
     }
 }
 
-async function handleProcessingComplete(outputs) {
+function handleProcessingComplete(outputs) {
     addLog('Processing complete!');
     stopPolling();
     if (websocket) websocket.close();
-
-    processingSection.style.display = 'none';
-    resultSection.style.display = 'block';
-
-    downloadBtn.onclick = () => {
-        window.location.href = `/api/download/${currentProjectId}`;
-    };
-
-    try {
-        const response = await fetchWithTimeout(`/api/processing/status/${currentProjectId}`);
-        const projectData = await response.json();
-        const result = projectData.result || {};
-        const qualityScore = result.quality_score || 0;
-        const grade = getQualityGrade(qualityScore);
-        const warnings = result.warnings || [];
-
-        let statsHtml = `
-            <p><strong>Processing time:</strong> ${calculateProcessingTime(projectData)}</p>
-            <p><strong>Clips detected:</strong> ${result.clip_count || 0}</p>
-            <p><strong>Total duration:</strong> ${(result.total_duration || 0).toFixed(1)}s</p>
-        `;
-
-        const qualityGaugeEl = document.getElementById('qualityGauge');
-        if (qualityGaugeEl) {
-            qualityGaugeEl.innerHTML = `
-                <div class="quality-gauge">
-                    <div class="quality-fill" style="width: ${Math.min(100, qualityScore)}%"></div>
-                </div>
-                <div class="quality-label">
-                    <span class="quality-grade grade-${grade.toLowerCase()}">${grade}</span>
-                    <span class="quality-value">${qualityScore.toFixed(1)}/100</span>
-                </div>
-            `;
-        }
-
-        const warningsEl = document.getElementById('warningsArea');
-        if (warningsEl && warnings.length > 0) {
-            warningsEl.style.display = 'block';
-            warningsEl.innerHTML = '<h4>Warnings</h4>' +
-                warnings.map(w => `<div class="warning-item">${w}</div>`).join('');
-        }
-
-        const suggestions = result.suggestions || [];
-        if (suggestions.length > 0) {
-            statsHtml += '<div class="suggestions"><h4>Suggestions</h4><ul>' +
-                suggestions.map(s => `<li>${s}</li>`).join('') + '</ul></div>';
-        }
-
-        document.getElementById('resultStats').innerHTML = statsHtml;
-    } catch (error) {
-        console.error('Failed to load project stats:', error);
-    }
-}
-
-function getQualityGrade(score) {
-    if (score >= 90) return 'A';
-    if (score >= 75) return 'B';
-    if (score >= 60) return 'C';
-    if (score >= 40) return 'D';
-    if (score >= 20) return 'E';
-    return 'F';
+    Router.navigate('result', { projectId: currentProjectId });
 }
 
 async function handleCancelProcessing() {
     if (!currentProjectId) return;
     try {
-        const response = await fetchWithTimeout(`/api/projects/${currentProjectId}/cancel`, {
-            method: 'POST',
-        });
+        const response = await API.cancelProject(currentProjectId);
         if (response.ok) {
             addLog('Processing cancelled by user');
-            showError('Processing cancelled');
+            showToast('Processing cancelled');
+            Router.navigate('dashboard');
         }
     } catch (error) {
         console.error('Cancel failed:', error);
@@ -688,72 +935,38 @@ function calculateProcessingTime(jobData) {
     return `${Math.floor(diff / 60)}m ${diff % 60}s`;
 }
 
+function getQualityGrade(score) {
+    if (score >= 90) return 'A';
+    if (score >= 75) return 'B';
+    if (score >= 60) return 'C';
+    if (score >= 40) return 'D';
+    if (score >= 20) return 'E';
+    return 'F';
+}
+
 // ══════════════════════════════════════════════════════════
 // UI HELPERS
 // ══════════════════════════════════════════════════════════
 
 function showError(message) {
-    uploadSection.style.display = 'none';
-    processingSection.style.display = 'none';
-    resultSection.style.display = 'none';
-    errorSection.style.display = 'block';
-    if (authSection) authSection.style.display = 'none';
-
+    Router.navigate('error');
     document.getElementById('errorMessage').textContent = message;
     stopPolling();
     if (websocket) websocket.close();
     addLog('Error: ' + message);
 }
 
-function resetToUpload() {
-    processingSection.style.display = 'none';
-    resultSection.style.display = 'none';
-    errorSection.style.display = 'none';
-
-    // If Firebase is enabled but user is logged out, show auth instead
-    if (firebaseEnabled && !currentUser) {
-        showAuthSection();
-    } else {
-        if (authSection) authSection.style.display = 'none';
-        uploadSection.style.display = 'block';
-    }
-
-    currentProjectId = null;
-    selectedFile = null;
-    fileInput.value = '';
-    wsReconnectAttempts = 0;
-
-    uploadArea.style.display = 'block';
-    selectedFileDiv.style.display = 'none';
-
-    progressFill.style.width = '0%';
-    progressText.textContent = '0%';
-    statusMessage.textContent = 'Preparing...';
-    logOutput.textContent = '';
-
-    for (let i = 1; i <= 4; i++) {
-        const step = document.getElementById(`step${i}`);
-        if (step) step.classList.remove('active', 'completed');
-    }
-
-    const warningsEl = document.getElementById('warningsArea');
-    if (warningsEl) warningsEl.style.display = 'none';
-    const qualityEl = document.getElementById('qualityGauge');
-    if (qualityEl) qualityEl.innerHTML = '';
-
-    stopPolling();
-    if (wsReconnectTimer) { clearTimeout(wsReconnectTimer); wsReconnectTimer = null; }
-}
-
 function handleDownload() {
     if (currentProjectId) {
-        window.location.href = `/api/download/${currentProjectId}`;
+        window.location.href = `${BACKEND_URL}/api/download/${currentProjectId}`;
         addLog('Download started');
     }
 }
 
 function addLog(message) {
-    const timestamp = new Date().toLocaleTimeString('ja-JP');
+    const logOutput = document.getElementById('logOutput');
+    if (!logOutput) return;
+    const timestamp = new Date().toLocaleTimeString('en-US', { hour12: false });
     logOutput.textContent += `[${timestamp}] ${message}\n`;
     logOutput.scrollTop = logOutput.scrollHeight;
 }
@@ -766,9 +979,137 @@ function formatFileSize(bytes) {
     return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
 }
 
+function escapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+}
+
+// ══════════════════════════════════════════════════════════
+// EVENT LISTENERS
+// ══════════════════════════════════════════════════════════
+
+function setupEventListeners() {
+    // Landing page CTAs → open auth modal
+    const landingSignIn = document.getElementById('landingSignInBtn');
+    const heroCTA = document.getElementById('heroCTABtn');
+    const ctaBottom = document.getElementById('ctaBottomBtn');
+    if (landingSignIn) landingSignIn.addEventListener('click', openAuthModal);
+    if (heroCTA) heroCTA.addEventListener('click', openAuthModal);
+    if (ctaBottom) ctaBottom.addEventListener('click', openAuthModal);
+
+    // Auth modal
+    const authBackdrop = document.getElementById('authModalBackdrop');
+    const authClose = document.getElementById('authModalClose');
+    const authToggle = document.getElementById('authToggleBtn');
+    if (authBackdrop) authBackdrop.addEventListener('click', closeAuthModal);
+    if (authClose) authClose.addEventListener('click', closeAuthModal);
+    if (authToggle) authToggle.addEventListener('click', toggleAuthMode);
+
+    const googleBtn = document.getElementById('googleSignInBtn');
+    if (googleBtn) googleBtn.addEventListener('click', signInWithGoogle);
+
+    const emailForm = document.getElementById('emailAuthForm');
+    if (emailForm) emailForm.addEventListener('submit', (e) => { e.preventDefault(); handleEmailSubmit(); });
+
+    const logoutBtn = document.getElementById('logoutBtn');
+    if (logoutBtn) logoutBtn.addEventListener('click', signOut);
+
+    // Sidebar navigation
+    document.querySelectorAll('.nav-item[data-view]').forEach(item => {
+        item.addEventListener('click', (e) => {
+            e.preventDefault();
+            Router.navigate(item.dataset.view);
+        });
+    });
+
+    // Dashboard new-project buttons
+    const dashNew = document.getElementById('dashNewProjectBtn');
+    const emptyNew = document.getElementById('emptyNewProjectBtn');
+    if (dashNew) dashNew.addEventListener('click', () => Router.navigate('upload'));
+    if (emptyNew) emptyNew.addEventListener('click', () => Router.navigate('upload'));
+
+    // Upload area
+    const fileInput = document.getElementById('fileInput');
+    const uploadArea = document.getElementById('uploadArea');
+
+    if (fileInput) fileInput.addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        if (file) UploadView.setFile(file);
+    });
+
+    if (uploadArea) {
+        uploadArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            uploadArea.classList.add('dragover');
+        });
+        uploadArea.addEventListener('dragleave', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            uploadArea.classList.remove('dragover');
+        });
+        uploadArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            uploadArea.classList.remove('dragover');
+            const file = e.dataTransfer.files[0];
+            if (file) UploadView.setFile(file);
+        });
+    }
+
+    const uploadBtn = document.getElementById('uploadBtn');
+    const cancelBtn = document.getElementById('cancelBtn');
+    if (uploadBtn) uploadBtn.addEventListener('click', () => UploadView.upload());
+    if (cancelBtn) cancelBtn.addEventListener('click', () => UploadView.cancelFile());
+
+    // Processing
+    const cancelProcessBtn = document.getElementById('cancelProcessBtn');
+    if (cancelProcessBtn) cancelProcessBtn.addEventListener('click', handleCancelProcessing);
+
+    // Result
+    const downloadBtn = document.getElementById('downloadBtn');
+    const newUploadBtn = document.getElementById('newUploadBtn');
+    const backToDash = document.getElementById('backToDashBtn');
+    if (downloadBtn) downloadBtn.addEventListener('click', handleDownload);
+    if (newUploadBtn) newUploadBtn.addEventListener('click', () => Router.navigate('upload'));
+    if (backToDash) backToDash.addEventListener('click', () => Router.navigate('dashboard'));
+
+    // Error
+    const retryBtn = document.getElementById('retryBtn');
+    const errorBack = document.getElementById('errorBackBtn');
+    if (retryBtn) retryBtn.addEventListener('click', () => Router.navigate('upload'));
+    if (errorBack) errorBack.addEventListener('click', () => Router.navigate('dashboard'));
+
+    // Mobile sidebar
+    const hamburger = document.getElementById('hamburgerBtn');
+    const sidebarClose = document.getElementById('sidebarClose');
+    if (hamburger) hamburger.addEventListener('click', openMobileSidebar);
+    if (sidebarClose) sidebarClose.addEventListener('click', closeMobileSidebar);
+
+    // Create sidebar overlay for mobile
+    const overlay = document.createElement('div');
+    overlay.id = 'sidebarOverlay';
+    overlay.className = 'sidebar-overlay';
+    overlay.addEventListener('click', closeMobileSidebar);
+    document.body.appendChild(overlay);
+}
+
+// ══════════════════════════════════════════════════════════
+// INITIALIZATION
+// ══════════════════════════════════════════════════════════
+
+document.addEventListener('DOMContentLoaded', async () => {
+    setupEventListeners();
+
+    // Show loading while Firebase initializes
+    showLoading();
+    await initFirebase();
+});
+
 // Prevent page unload during processing
 window.addEventListener('beforeunload', (e) => {
-    if (processingSection.style.display === 'block') {
+    if (Router.currentView === 'processing') {
         e.preventDefault();
         e.returnValue = 'Processing in progress. Leave page?';
     }
