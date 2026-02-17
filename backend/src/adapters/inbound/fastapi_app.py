@@ -80,7 +80,9 @@ async def auth_middleware(request: Request, call_next):
     """
     path = request.url.path
 
-    # Skip auth for exempt paths and the root page
+    # Skip auth for CORS preflight, exempt paths, and the root page
+    if request.method == "OPTIONS":
+        return await call_next(request)
     if path == "/" or any(path.startswith(p) for p in _AUTH_EXEMPT_PREFIXES):
         return await call_next(request)
 
