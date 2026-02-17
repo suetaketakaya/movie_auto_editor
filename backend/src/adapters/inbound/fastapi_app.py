@@ -96,10 +96,12 @@ def _cors_headers(request: Request) -> dict:
 
 def _auth_error(request: Request, detail: str) -> JSONResponse:
     """Return a 401 with CORS headers so the browser can read the body."""
+    headers = _cors_headers(request)
+    headers["cache-control"] = "no-store, no-cache, must-revalidate"
     return JSONResponse(
         status_code=401,
         content={"detail": detail},
-        headers=_cors_headers(request),
+        headers=headers,
     )
 
 
@@ -121,15 +123,19 @@ async def auth_middleware(request: Request, call_next):
     auth_header = request.headers.get("Authorization", "")
     if auth_header.startswith("Bearer "):
         token = auth_header[7:]
+        logger.info("Auth: Bearer token received for %s (len=%d)", path, len(token))
         try:
             user_auth = request.app.state.container.user_auth()
             user = await user_auth.verify_token(token)
-            if user:
-                request.state.user = user
-                return await call_next(request)
         except Exception as exc:
             logger.warning("Bearer token verification failed: %s", exc)
-        return _auth_error(request, "Invalid or expired token")
+            return _auth_error(request, "Invalid or expired token")
+        if not user:
+            logger.warning("Auth: verify_token returned None for %s", path)
+            return _auth_error(request, "Invalid or expired token")
+        logger.info("Auth: token verified OK for user=%s", user.email)
+        request.state.user = user
+        return await call_next(request)
 
     # --- Fallback: API Key ---
     if _api_key:
@@ -166,6 +172,9 @@ async def request_logging_middleware(request: Request, call_next):
     start = time.perf_counter()
     response = await call_next(request)
     duration_ms = (time.perf_counter() - start) * 1000
+    # Prevent Cloudflare/browser from caching API responses
+    if request.url.path.startswith("/api"):
+        response.headers["cache-control"] = "no-store, no-cache, must-revalidate"
     logger.info(
         "%s %s -> %d (%.1fms)",
         request.method,

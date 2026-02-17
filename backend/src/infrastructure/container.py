@@ -109,11 +109,13 @@ class ApplicationContainer:
     @staticmethod
     def _build_task_queue(settings: Settings):
         if settings.app_env == "production":
-            from backend.src.adapters.outbound.queue.celery_queue import CeleryTaskQueue
-            return CeleryTaskQueue(broker_url=settings.celery.broker_url)
-        else:
-            from backend.src.adapters.outbound.queue.in_process_queue import InProcessTaskQueue
-            return InProcessTaskQueue()
+            try:
+                from backend.src.adapters.outbound.queue.celery_queue import CeleryTaskQueue
+                return CeleryTaskQueue(broker_url=settings.celery.broker_url)
+            except ImportError:
+                logger.warning("Celery not installed, falling back to in-process queue")
+        from backend.src.adapters.outbound.queue.in_process_queue import InProcessTaskQueue
+        return InProcessTaskQueue()
 
     @staticmethod
     def _build_notification(settings: Settings):

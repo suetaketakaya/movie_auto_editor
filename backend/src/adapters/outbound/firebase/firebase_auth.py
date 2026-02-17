@@ -32,7 +32,9 @@ class FirebaseAuthAdapter:
         Returns None if the token is invalid or expired.
         """
         try:
+            logger.info("Verifying token (first 20 chars): %s...", id_token[:20] if len(id_token) > 20 else id_token)
             decoded = auth.verify_id_token(id_token)
+            logger.info("Token decoded OK: uid=%s, email=%s", decoded.get("uid"), decoded.get("email"))
             return User(
                 id=decoded["uid"],
                 firebase_uid=decoded["uid"],
