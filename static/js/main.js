@@ -261,12 +261,11 @@ async function initFirebase() {
         } catch (_) { /* backend not reachable */ }
 
         if (!config) {
-            config = {
-                enabled: true,
-                apiKey: 'REDACTED_FIREBASE_API_KEY',
-                authDomain: 'moviecutter.firebaseapp.com',
-                projectId: 'moviecutter',
-            };
+            console.warn('Could not fetch Firebase config from backend');
+            hideLoading();
+            showLanding();
+            showToast('Could not connect to server. Please try again later.', 'error');
+            return;
         }
 
         if (!config.enabled) {
