@@ -45,14 +45,14 @@ class FirebaseAuthAdapter:
                 is_anonymous=decoded.get("firebase", {}).get("sign_in_provider") == "anonymous",
                 last_login_at=datetime.utcnow(),
             )
-        except auth.ExpiredIdTokenError:
-            logger.warning("Expired Firebase token")
+        except auth.ExpiredIdTokenError as e:
+            logger.warning("Expired Firebase token: %s", e)
             return None
-        except auth.InvalidIdTokenError:
-            logger.warning("Invalid Firebase token")
+        except auth.InvalidIdTokenError as e:
+            logger.warning("Invalid Firebase token: %s", e)
             return None
         except Exception as e:
-            logger.error("Firebase token verification failed: %s", e)
+            logger.error("Firebase token verification failed: %s (type=%s)", e, type(e).__name__)
             return None
 
     async def get_user_by_uid(self, uid: str) -> Optional[User]:

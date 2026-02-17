@@ -43,7 +43,7 @@ function getAuthHeaders() {
     return headers;
 }
 
-function fetchWithTimeout(url, options = {}, timeout = FETCH_TIMEOUT) {
+async function fetchWithTimeout(url, options = {}, timeout = FETCH_TIMEOUT) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeout);
 
@@ -51,11 +51,36 @@ function fetchWithTimeout(url, options = {}, timeout = FETCH_TIMEOUT) {
     const authHeaders = getAuthHeaders();
     const mergedHeaders = { ...(options.headers || {}), ...authHeaders };
 
-    return fetch(fullUrl, {
-        ...options,
-        headers: mergedHeaders,
-        signal: controller.signal,
-    }).finally(() => clearTimeout(timer));
+    try {
+        const resp = await fetch(fullUrl, {
+            ...options,
+            headers: mergedHeaders,
+            signal: controller.signal,
+        });
+
+        // On 401, refresh token and retry once
+        if (resp.status === 401 && currentUser) {
+            clearTimeout(timer);
+            console.warn('Got 401, refreshing token and retrying...');
+            idToken = await currentUser.getIdToken(true);
+            const retryHeaders = { ...(options.headers || {}), ...getAuthHeaders() };
+            const controller2 = new AbortController();
+            const timer2 = setTimeout(() => controller2.abort(), timeout);
+            try {
+                return await fetch(fullUrl, {
+                    ...options,
+                    headers: retryHeaders,
+                    signal: controller2.signal,
+                });
+            } finally {
+                clearTimeout(timer2);
+            }
+        }
+
+        return resp;
+    } finally {
+        clearTimeout(timer);
+    }
 }
 
 const API = {
@@ -296,11 +321,13 @@ async function initFirebase() {
             hideLoading();
 
             if (user) {
+                const wasLoggedIn = !!currentUser;
                 currentUser = user;
-                idToken = await user.getIdToken();
+                idToken = await user.getIdToken(true);
                 updateUserUI(user);
                 closeAuthModal();
-                showApp();
+                // Only navigate to dashboard on fresh login, not on token refresh
+                if (!wasLoggedIn) showApp();
 
                 tokenRefreshTimer = setInterval(async () => {
                     if (currentUser) {
