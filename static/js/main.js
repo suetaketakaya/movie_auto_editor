@@ -299,6 +299,14 @@ function showToast(message, type = 'success') {
 // FIREBASE AUTH (preserved)
 // ══════════════════════════════════════════════════════════
 
+// Fallback Firebase config (public, non-secret values)
+const FIREBASE_FALLBACK_CONFIG = {
+    enabled: true,
+    apiKey: 'AIzaSyA1w0t5mlM8bH0RHd1Dp6Ziins32_thAM0',
+    authDomain: 'moviecutter.firebaseapp.com',
+    projectId: 'moviecutter',
+};
+
 async function initFirebase() {
     try {
         let config;
@@ -310,11 +318,8 @@ async function initFirebase() {
         } catch (_) { /* backend not reachable */ }
 
         if (!config) {
-            console.warn('Could not fetch Firebase config from backend');
-            hideLoading();
-            showLanding();
-            showToast('Could not connect to server. Please try again later.', 'error');
-            return;
+            console.warn('Could not fetch Firebase config from backend, using fallback');
+            config = FIREBASE_FALLBACK_CONFIG;
         }
 
         if (!config.enabled) {
