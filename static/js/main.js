@@ -31,7 +31,7 @@ const FETCH_TIMEOUT = 30000;
 
 const BACKEND_URL = window.location.hostname === 'localhost'
     ? ''
-    : 'https://moviecutter-api.onrender.com';
+    : 'https://movie-auto-editor-1.onrender.com';
 
 // ══════════════════════════════════════════════════════════
 // API CLIENT

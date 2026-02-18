@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: moviecutter-api
+    name: movie-auto-editor-1
     runtime: docker
     dockerfilePath: ./Dockerfile
     plan: free
