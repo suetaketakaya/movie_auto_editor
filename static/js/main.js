@@ -115,6 +115,30 @@ const API = {
         }, 120000);
     },
 
+    async initiateGCSUpload(filename, contentType, name) {
+        return fetchWithTimeout('/api/processing/upload/initiate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                filename,
+                content_type: contentType || 'video/mp4',
+                name: name || filename,
+                upload_content_type: 'fps_montage',
+            }),
+        });
+    },
+
+    async completeGCSUpload(projectId, gcsObjectName) {
+        return fetchWithTimeout('/api/processing/upload/complete', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                project_id: projectId,
+                gcs_object_name: gcsObjectName,
+            }),
+        });
+    },
+
     async startProcessing(projectId) {
         return fetchWithTimeout('/api/processing/start', {
             method: 'POST',
@@ -598,26 +622,52 @@ const UploadView = {
         if (!selectedFile) return;
 
         const uploadBtn = document.getElementById('uploadBtn');
-        const formData = new FormData();
-        formData.append('file', selectedFile);
-        formData.append('name', selectedFile.name);
-        formData.append('content_type', 'fps_montage');
 
         try {
             uploadBtn.disabled = true;
             uploadBtn.textContent = 'Uploading...';
 
-            const response = await API.uploadFile(formData);
-            if (!response.ok) {
-                const errorData = await response.json().catch(() => ({}));
-                throw new Error(errorData.detail || 'Upload failed');
+            // Try GCS chunked upload first; fall back to legacy if not configured
+            const initiateResp = await API.initiateGCSUpload(
+                selectedFile.name,
+                selectedFile.type || 'video/mp4',
+                selectedFile.name
+            );
+
+            if (initiateResp.status === 503) {
+                // GCS not configured — use legacy direct upload
+                await this._legacyUpload();
+                return;
             }
 
-            const data = await response.json();
-            currentProjectId = data.project_id;
-            addLog('Upload complete: ' + selectedFile.name);
+            if (!initiateResp.ok) {
+                const err = await initiateResp.json().catch(() => ({}));
+                throw new Error(err.detail || 'Failed to initiate upload');
+            }
 
-            // Navigate to processing, then start
+            const { project_id, upload_url, gcs_object_name } = await initiateResp.json();
+            currentProjectId = project_id;
+
+            // Show progress bar
+            const progressEl = document.getElementById('uploadProgress');
+            if (progressEl) progressEl.style.display = 'block';
+
+            // Resumable upload directly to GCS
+            await this._resumableUpload(upload_url, selectedFile, (pct) => {
+                const bar = document.getElementById('uploadProgressFill');
+                const label = document.getElementById('uploadProgressLabel');
+                if (bar) bar.style.width = `${pct}%`;
+                if (label) label.textContent = `Uploading ${pct}%`;
+            });
+
+            // Notify backend upload is complete
+            const completeResp = await API.completeGCSUpload(project_id, gcs_object_name);
+            if (!completeResp.ok) {
+                const err = await completeResp.json().catch(() => ({}));
+                throw new Error(err.detail || 'Upload completion failed');
+            }
+
+            addLog('Upload complete: ' + selectedFile.name);
             Router.navigate('processing', { projectId: currentProjectId, start: true });
         } catch (error) {
             if (error.name === 'AbortError') {
@@ -628,7 +678,70 @@ const UploadView = {
         } finally {
             uploadBtn.disabled = false;
             uploadBtn.textContent = 'Upload & Process';
+            const progressEl = document.getElementById('uploadProgress');
+            if (progressEl) progressEl.style.display = 'none';
         }
+    },
+
+    async _resumableUpload(uploadUrl, file, onProgress) {
+        const CHUNK_SIZE = 8 * 1024 * 1024; // 8MB
+        const totalSize = file.size;
+        let offset = 0;
+
+        while (offset < totalSize) {
+            const end = Math.min(offset + CHUNK_SIZE, totalSize);
+            const chunk = file.slice(offset, end);
+            const isLast = end === totalSize;
+
+            const contentRange = isLast
+                ? `bytes ${offset}-${end - 1}/${totalSize}`
+                : `bytes ${offset}-${end - 1}/*`;
+
+            const resp = await fetch(uploadUrl, {
+                method: 'PUT',
+                headers: {
+                    'Content-Range': contentRange,
+                    'Content-Type': file.type || 'video/mp4',
+                },
+                body: chunk,
+            });
+
+            if (resp.status === 308) {
+                // GCS Resume Incomplete — parse Range header for confirmed offset
+                const range = resp.headers.get('Range');
+                if (range) {
+                    const match = range.match(/bytes=0-(\d+)/);
+                    offset = match ? parseInt(match[1], 10) + 1 : end;
+                } else {
+                    offset = end;
+                }
+            } else if (resp.status === 200 || resp.status === 201) {
+                offset = end;
+            } else {
+                const body = await resp.text();
+                throw new Error(`GCS upload failed (HTTP ${resp.status}): ${body}`);
+            }
+
+            const pct = Math.round((offset / totalSize) * 100);
+            onProgress(pct);
+        }
+    },
+
+    async _legacyUpload() {
+        const formData = new FormData();
+        formData.append('file', selectedFile);
+        formData.append('name', selectedFile.name);
+        formData.append('content_type', 'fps_montage');
+
+        const response = await API.uploadFile(formData);
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData.detail || 'Upload failed');
+        }
+        const data = await response.json();
+        currentProjectId = data.project_id;
+        addLog('Upload complete: ' + selectedFile.name);
+        Router.navigate('processing', { projectId: currentProjectId, start: true });
     },
 };
 

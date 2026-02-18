@@ -130,6 +130,107 @@ async def upload_video(
     return {"project_id": project.id, "video_path": str(video_path)}
 
 
+class InitiateUploadRequest(BaseModel):
+    filename: str
+    content_type: str = "video/mp4"
+    name: str = ""
+    upload_content_type: str = "fps_montage"
+
+
+class InitiateUploadResponse(BaseModel):
+    project_id: str
+    upload_url: str
+    gcs_object_name: str
+
+
+class CompleteUploadRequest(BaseModel):
+    project_id: str
+    gcs_object_name: str
+
+
+@router.post("/upload/initiate", response_model=InitiateUploadResponse)
+async def initiate_gcs_upload(
+    body: InitiateUploadRequest,
+    request: Request,
+    user: User = Depends(get_current_user),
+):
+    """Step 1 of GCS upload: create project and return a resumable upload session URI."""
+    container = request.app.state.container
+    settings = container.settings
+
+    if not settings.gcs.enabled:
+        raise HTTPException(status_code=503, detail="GCS upload is not configured on this server")
+
+    _validate_extension(body.filename)
+    safe_filename = _sanitize_filename(body.filename)
+
+    project_id = str(uuid.uuid4())
+    gcs_object_name = f"{settings.gcs.upload_prefix}{project_id}/{safe_filename}"
+
+    file_storage = container.file_storage()
+    if not hasattr(file_storage, "create_resumable_upload_session"):
+        raise HTTPException(status_code=503, detail="Storage backend does not support GCS uploads")
+
+    upload_url = file_storage.create_resumable_upload_session(
+        gcs_object_name, content_type=body.content_type
+    )
+
+    output_dir = str(Path(settings.storage.media_root) / project_id)
+    gcs_uri = f"gs://{settings.gcs.bucket_name}/{gcs_object_name}"
+
+    project_service = container.project_service()
+    project = await project_service.create_project(
+        name=body.name or body.filename,
+        input_video_path=gcs_uri,
+        output_dir=output_dir,
+        content_type=body.upload_content_type,
+    )
+    project.user_id = user.id
+    project.metadata["gcs_object_name"] = gcs_object_name
+    project.metadata["upload_complete"] = False
+    repo = container.project_repository()
+    await repo.save(project)
+
+    return InitiateUploadResponse(
+        project_id=project.id,
+        upload_url=upload_url,
+        gcs_object_name=gcs_object_name,
+    )
+
+
+@router.post("/upload/complete")
+async def complete_gcs_upload(
+    body: CompleteUploadRequest,
+    request: Request,
+    user: User = Depends(get_current_user),
+):
+    """Step 2 of GCS upload: verify object exists and mark upload as complete."""
+    container = request.app.state.container
+    project_service = container.project_service()
+
+    project = await project_service.get_project(body.project_id)
+    if project is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+    if project.user_id and project.user_id != user.id:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    file_storage = container.file_storage()
+    if not hasattr(file_storage, "gcs_object_exists"):
+        raise HTTPException(status_code=503, detail="GCS storage not configured")
+
+    if not file_storage.gcs_object_exists(body.gcs_object_name):
+        raise HTTPException(
+            status_code=400,
+            detail="GCS object not found. Upload may not have completed.",
+        )
+
+    project.metadata["upload_complete"] = True
+    repo = container.project_repository()
+    await repo.save(project)
+
+    return {"project_id": project.id, "status": "upload_complete"}
+
+
 @router.post("/start", response_model=ProcessResponse)
 async def start_processing(
     body: ProcessRequest,

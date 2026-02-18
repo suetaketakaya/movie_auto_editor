@@ -103,6 +103,15 @@ class ApplicationContainer:
 
     @staticmethod
     def _build_file_storage(settings: Settings):
+        if settings.gcs.enabled:
+            from backend.src.adapters.outbound.storage.gcs_file_storage import GCSFileStorage
+            return GCSFileStorage(
+                bucket_name=settings.gcs.bucket_name,
+                credentials_path=settings.gcs.credentials_path or settings.firebase.credentials_path,
+                upload_prefix=settings.gcs.upload_prefix,
+                signed_url_expiration_seconds=settings.gcs.signed_url_expiration_seconds,
+                local_cache_dir=settings.storage.media_root,
+            )
         from backend.src.adapters.outbound.persistence.local_file_storage import LocalFileStorage
         return LocalFileStorage(base_dir=settings.storage.media_root)
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import logging
 import uuid
+from pathlib import Path
 from typing import Optional
 
 from backend.src.core.entities.content_type import ContentType
@@ -48,6 +49,20 @@ class ProjectService:
             raise ValueError(f"Project not found: {project_id}")
         if project.status != ProjectStatus.UPLOADED:
             raise ValueError(f"Project {project_id} is in state {project.status.value}, cannot start")
+
+        # If input is a GCS URI, download to local before processing
+        input_path = project.input_video_path
+        if input_path.startswith("gs://") and hasattr(self._file_storage, "download_to_local"):
+            gcs_object_name = project.metadata.get("gcs_object_name", "")
+            if gcs_object_name:
+                local_dir = Path(project.output_dir)
+                local_dir.mkdir(parents=True, exist_ok=True)
+                filename = Path(gcs_object_name).name
+                local_path = str(local_dir / filename)
+                logger.info("Downloading from GCS: %s -> %s", gcs_object_name, local_path)
+                input_path = await self._file_storage.download_to_local(gcs_object_name, local_path)
+                project.input_video_path = input_path
+                await self._repository.save(project)
 
         task_id = self._task_queue.enqueue(
             "process_video", {"project_id": project_id}

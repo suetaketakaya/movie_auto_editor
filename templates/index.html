@@ -281,6 +281,12 @@
                                     <div class="file-size" id="fileSize"></div>
                                 </div>
                             </div>
+                            <div id="uploadProgress" style="display:none; margin-top: 1rem;">
+                                <div class="progress-bar" style="height: 8px; background: var(--bg-tertiary, #2a2a3e); border-radius: 4px; overflow: hidden;">
+                                    <div id="uploadProgressFill" style="width: 0%; height: 100%; background: var(--accent, #6366f1); border-radius: 4px; transition: width 0.3s;"></div>
+                                </div>
+                                <span id="uploadProgressLabel" style="font-size: 0.85rem; color: var(--text-secondary, #a1a1aa); margin-top: 0.25rem; display: inline-block;">Uploading 0%</span>
+                            </div>
                             <div class="file-actions">
                                 <button class="btn btn-primary" id="uploadBtn">Upload &amp; Process</button>
                                 <button class="btn btn-secondary" id="cancelBtn">Cancel</button>

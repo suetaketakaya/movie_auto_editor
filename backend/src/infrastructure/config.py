@@ -357,6 +357,16 @@ class MLflowSettings(BaseSettings):
     model_config = {"env_prefix": "MLFLOW_"}
 
 
+class GCSSettings(BaseSettings):
+    enabled: bool = False
+    bucket_name: str = ""
+    credentials_path: str = ""
+    upload_prefix: str = "uploads/"
+    signed_url_expiration_seconds: int = 3600
+
+    model_config = {"env_prefix": "GCS_"}
+
+
 class StorageSettings(BaseSettings):
     media_root: str = "./media"
     upload_dir: str = "./media/uploads"
@@ -374,6 +384,9 @@ class Settings(BaseSettings):
 
     # Authentication
     firebase: FirebaseSettings = Field(default_factory=FirebaseSettings)
+
+    # Google Cloud Storage
+    gcs: GCSSettings = Field(default_factory=GCSSettings)
 
     # Infrastructure
     database: DatabaseSettings = Field(default_factory=DatabaseSettings)
