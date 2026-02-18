@@ -1,0 +1,27 @@
+services:
+  - type: web
+    name: moviecutter-api
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: free
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: PERSISTENCE_BACKEND
+        value: memory
+      - key: FIREBASE_ENABLED
+        value: "true"
+      - key: FIREBASE_PROJECT_ID
+        value: moviecutter
+      - key: FIREBASE_AUTH_DOMAIN
+        value: moviecutter.firebaseapp.com
+      - key: FIREBASE_API_KEY
+        sync: false
+      - key: FIREBASE_CREDENTIALS_PATH
+        value: /etc/secrets/firebase-sa.json
+      - key: SECRET_KEY
+        generateValue: true
+      - key: GCS_ENABLED
+        value: "false"
+      - key: ALLOWED_ORIGIN
+        value: https://moviecutter.web.app

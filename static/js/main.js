@@ -29,7 +29,9 @@ const WS_INITIAL_BACKOFF = 1000;
 const POLLING_INTERVAL = 5000;
 const FETCH_TIMEOUT = 30000;
 
-const BACKEND_URL = window.location.hostname === 'localhost' ? '' : 'https://peaceful-metabolism-singer-attach.trycloudflare.com';
+const BACKEND_URL = window.location.hostname === 'localhost'
+    ? ''
+    : 'https://moviecutter-api.onrender.com';
 
 // ══════════════════════════════════════════════════════════
 // API CLIENT
