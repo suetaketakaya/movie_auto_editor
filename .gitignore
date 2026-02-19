@@ -58,8 +58,8 @@ firebase-service-account.json
 # Firebase Hosting build
 public/
 
-# Media storage
-media/
+# Media storage (root only, not backend/src/adapters/outbound/media/)
+/media/
 
 # Claude code に関するプライベート情報を無視する
 .claude*
