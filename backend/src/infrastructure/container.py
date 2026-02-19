@@ -229,10 +229,43 @@ class ApplicationContainer:
 
     def project_service(self):
         from backend.src.application.project_service import ProjectService
+
+        queue = self.task_queue()
+
+        # Register the process_video task for InProcessTaskQueue
+        from backend.src.adapters.outbound.queue.in_process_queue import InProcessTaskQueue
+        if isinstance(queue, InProcessTaskQueue) and "process_video" not in queue._registry:
+            process_svc = self.process_video_service()
+            repo = self.project_repository()
+
+            async def _process_video_task(project_id: str) -> None:
+                from backend.src.application.dto.process_request import ProcessRequest
+                from backend.src.core.entities.content_type import ContentType
+                project = await repo.get_by_id(project_id)
+                if project is None:
+                    raise ValueError(f"Project {project_id} not found")
+                ct = project.content_type or "fps_montage"
+                if isinstance(ct, str):
+                    try:
+                        ct = ContentType(ct)
+                    except ValueError:
+                        ct = ContentType.FPS_MONTAGE
+                request = ProcessRequest(
+                    project_id=project.id,
+                    project_name=project.name,
+                    input_video_path=project.input_video_path,
+                    output_dir=project.output_dir or f"./media/{project.id}",
+                    content_type=ct,
+                )
+                await process_svc.execute(request)
+
+            queue.register("process_video", _process_video_task)
+            logger.info("Registered 'process_video' task in InProcessTaskQueue")
+
         return ProjectService(
             repository=self.project_repository(),
             file_storage=self.file_storage(),
-            task_queue=self.task_queue(),
+            task_queue=queue,
         )
 
     def experiment_service(self):
