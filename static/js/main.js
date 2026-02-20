@@ -42,6 +42,10 @@ function getAuthHeaders() {
     if (idToken) {
         headers['Authorization'] = `Bearer ${idToken}`;
     }
+    const geminiKey = localStorage.getItem('gemini_api_key');
+    if (geminiKey) {
+        headers['X-Gemini-Api-Key'] = geminiKey;
+    }
     return headers;
 }
 
@@ -459,6 +463,55 @@ function showAuthError(message) {
 function clearAuthError() {
     const el = document.getElementById('authError');
     if (el) el.style.display = 'none';
+}
+
+// ══════════════════════════════════════════════════════════
+// SETTINGS
+// ══════════════════════════════════════════════════════════
+
+function openSettingsModal() {
+    const modal = document.getElementById('settings-modal');
+    if (modal) modal.style.display = 'flex';
+    const input = document.getElementById('settingsGeminiKey');
+    const saved = localStorage.getItem('gemini_api_key');
+    if (input && saved) input.value = saved;
+}
+
+function closeSettingsModal() {
+    const modal = document.getElementById('settings-modal');
+    if (modal) modal.style.display = 'none';
+}
+
+function saveSettings() {
+    const input = document.getElementById('settingsGeminiKey');
+    const status = document.getElementById('settingsStatus');
+    const key = input ? input.value.trim() : '';
+    if (key) {
+        localStorage.setItem('gemini_api_key', key);
+        if (status) {
+            status.style.display = 'block';
+            status.style.color = '#4ade80';
+            status.textContent = 'API key saved. It will be used for video analysis.';
+        }
+    } else {
+        if (status) {
+            status.style.display = 'block';
+            status.style.color = '#f87171';
+            status.textContent = 'Please enter a valid API key.';
+        }
+    }
+}
+
+function clearSettings() {
+    localStorage.removeItem('gemini_api_key');
+    const input = document.getElementById('settingsGeminiKey');
+    const status = document.getElementById('settingsStatus');
+    if (input) input.value = '';
+    if (status) {
+        status.style.display = 'block';
+        status.style.color = '#facc15';
+        status.textContent = 'API key cleared. Server default will be used.';
+    }
 }
 
 // ══════════════════════════════════════════════════════════
@@ -1160,6 +1213,18 @@ function setupEventListeners() {
 
     const logoutBtn = document.getElementById('logoutBtn');
     if (logoutBtn) logoutBtn.addEventListener('click', signOut);
+
+    // Settings modal
+    const settingsNav = document.getElementById('settingsNavBtn');
+    if (settingsNav) settingsNav.addEventListener('click', (e) => { e.preventDefault(); openSettingsModal(); });
+    const settingsClose = document.getElementById('settingsModalClose');
+    const settingsBackdrop = document.getElementById('settingsModalBackdrop');
+    if (settingsClose) settingsClose.addEventListener('click', closeSettingsModal);
+    if (settingsBackdrop) settingsBackdrop.addEventListener('click', closeSettingsModal);
+    const settingsSave = document.getElementById('settingsSaveBtn');
+    const settingsClear = document.getElementById('settingsClearBtn');
+    if (settingsSave) settingsSave.addEventListener('click', saveSettings);
+    if (settingsClear) settingsClear.addEventListener('click', clearSettings);
 
     // Sidebar navigation
     document.querySelectorAll('.nav-item[data-view]').forEach(item => {

@@ -21,6 +21,10 @@ services:
         value: /etc/secrets/firebase-sa.json
       - key: SECRET_KEY
         generateValue: true
+      - key: VISION_BACKEND
+        value: gemini
+      - key: GEMINI_API_KEY
+        sync: false
       - key: GCS_ENABLED
         value: "false"
       - key: ALLOWED_ORIGIN

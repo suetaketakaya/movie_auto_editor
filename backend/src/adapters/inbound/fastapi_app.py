@@ -246,7 +246,11 @@ app.include_router(dashboard_router, prefix="/api/dashboard", tags=["dashboard"]
 
 @app.get("/api/health")
 async def health():
-    return {"status": "ok", "version": "0.2.0"}
+    return {
+        "status": "ok",
+        "version": "0.2.0",
+        "vision_backend": settings.vision_backend,
+    }
 
 
 @app.get("/api/config/firebase")

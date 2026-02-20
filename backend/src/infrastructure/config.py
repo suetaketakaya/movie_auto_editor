@@ -26,6 +26,14 @@ class OllamaSettings(BaseSettings):
     model_config = {"env_prefix": "OLLAMA_"}
 
 
+class GeminiSettings(BaseSettings):
+    api_key: str = ""
+    vision_model: str = "gemini-2.0-flash"
+    timeout: int = 60
+
+    model_config = {"env_prefix": "GEMINI_"}
+
+
 class MultiModelSettings(BaseSettings):
     enable: bool = True
     strategy: str = "confidence"
@@ -396,7 +404,9 @@ class Settings(BaseSettings):
     storage: StorageSettings = Field(default_factory=StorageSettings)
 
     # AI / Analysis
+    vision_backend: str = "ollama"  # "ollama" or "gemini"
     ollama: OllamaSettings = Field(default_factory=OllamaSettings)
+    gemini: GeminiSettings = Field(default_factory=GeminiSettings)
     multi_model: MultiModelSettings = Field(default_factory=MultiModelSettings)
     ai_analysis: AIAnalysisSettings = Field(default_factory=AIAnalysisSettings)
     advanced_analysis: AdvancedAnalysisSettings = Field(default_factory=AdvancedAnalysisSettings)

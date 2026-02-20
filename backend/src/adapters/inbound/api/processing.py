@@ -248,6 +248,15 @@ async def start_processing(
     if project.user_id and project.user_id != user.id:
         raise HTTPException(status_code=403, detail="Access denied")
 
+    # Store user-provided Gemini API key on project for async task to use
+    user_gemini_key = request.headers.get("X-Gemini-Api-Key")
+    if user_gemini_key:
+        repo = container.project_repository()
+        if not project.metadata:
+            project.metadata = {}
+        project.metadata["user_gemini_api_key"] = user_gemini_key
+        await repo.save(project)
+
     try:
         task_id = await project_service.start_processing(body.project_id)
     except ValueError as e:

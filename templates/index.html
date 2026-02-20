@@ -162,6 +162,31 @@
     </div>
 
     <!-- ══════════════════════════════════════════════════════════
+         SETTINGS MODAL
+         ══════════════════════════════════════════════════════════ -->
+    <div id="settings-modal" class="modal-overlay" style="display:none;">
+        <div class="modal-backdrop" id="settingsModalBackdrop"></div>
+        <div class="auth-card" style="max-width:480px;">
+            <button class="modal-close" id="settingsModalClose">&times;</button>
+            <h2>Settings</h2>
+            <p class="auth-subtitle">Configure your AI Vision API key</p>
+            <div class="auth-form-section">
+                <label style="display:block;margin-bottom:6px;font-size:14px;color:var(--text-secondary,#aaa);">Gemini API Key</label>
+                <input type="password" id="settingsGeminiKey" placeholder="AIzaSy..." class="auth-input" style="font-family:monospace;">
+                <p style="font-size:12px;color:var(--text-secondary,#888);margin:8px 0 0;">
+                    Get your free key at <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener" style="color:var(--accent,#7c5cfc);">Google AI Studio</a>
+                    (1,500 requests/day free)
+                </p>
+                <div style="margin-top:16px;display:flex;gap:8px;">
+                    <button class="btn btn-primary" id="settingsSaveBtn">Save</button>
+                    <button class="btn btn-secondary" id="settingsClearBtn" style="background:transparent;border:1px solid var(--border,#333);color:var(--text-secondary,#aaa);">Clear Key</button>
+                </div>
+                <div id="settingsStatus" style="margin-top:10px;font-size:13px;display:none;"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ══════════════════════════════════════════════════════════
          LOADING (shown during Firebase init)
          ══════════════════════════════════════════════════════════ -->
     <div id="view-loading" class="view">
@@ -189,6 +214,10 @@
                 <a href="#" class="nav-item" data-view="upload">
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
                     <span>New Project</span>
+                </a>
+                <a href="#" class="nav-item" id="settingsNavBtn">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+                    <span>Settings</span>
                 </a>
             </nav>
             <div class="sidebar-user" id="sidebarUser">

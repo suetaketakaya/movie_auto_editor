@@ -71,6 +71,16 @@ class ApplicationContainer:
 
     @staticmethod
     def _build_vision(settings: Settings):
+        if settings.vision_backend == "gemini":
+            from backend.src.adapters.outbound.ai.gemini_vision import GeminiVisionAdapter
+            gemini_cfg = {
+                "gemini": {
+                    "api_key": settings.gemini.api_key,
+                    "vision_model": settings.gemini.vision_model,
+                    "timeout": settings.gemini.timeout,
+                },
+            }
+            return GeminiVisionAdapter(config=gemini_cfg)
         from backend.src.adapters.outbound.ai.ollama_vision import OllamaVisionAdapter
         return OllamaVisionAdapter(config=settings.to_legacy_dict())
 
@@ -227,6 +237,29 @@ class ApplicationContainer:
             notifier=self.notification(),
         )
 
+    def _build_process_service_with_user_key(self, gemini_api_key: str):
+        """Create a ProcessVideoService using the user's own Gemini API key."""
+        from backend.src.application.process_video_service import ProcessVideoService
+        from backend.src.adapters.outbound.ai.gemini_vision import GeminiVisionAdapter
+        vision = GeminiVisionAdapter(config={
+            "gemini": {
+                "api_key": gemini_api_key,
+                "vision_model": self.settings.gemini.vision_model,
+                "timeout": self.settings.gemini.timeout,
+            },
+        })
+        logger.info("Created per-request GeminiVisionAdapter with user-provided API key")
+        return ProcessVideoService(
+            vision=vision,
+            editor=self.video_editor(),
+            audio=self.audio(),
+            effects=self.effects(),
+            text_overlay=self.text_overlay(),
+            frame_extraction=self.frame_extraction(),
+            repository=self.project_repository(),
+            notifier=self.notification(),
+        )
+
     def project_service(self):
         from backend.src.application.project_service import ProjectService
 
@@ -257,7 +290,14 @@ class ApplicationContainer:
                     output_dir=project.output_dir or f"./media/{project.id}",
                     content_type=ct,
                 )
-                await process_svc.execute(request)
+
+                # Use per-request vision adapter if user provided their own API key
+                user_key = (project.metadata or {}).get("user_gemini_api_key")
+                if user_key:
+                    svc = self._build_process_service_with_user_key(user_key)
+                    await svc.execute(request)
+                else:
+                    await process_svc.execute(request)
 
             queue.register("process_video", _process_video_task)
             logger.info("Registered 'process_video' task in InProcessTaskQueue")
