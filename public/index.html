@@ -1,0 +1,428 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ClipMontage - AI Video Editor</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/style.css?v=5.0">
+</head>
+<body>
+
+    <!-- ══════════════════════════════════════════════════════════
+         LANDING PAGE (unauthenticated)
+         ══════════════════════════════════════════════════════════ -->
+    <div id="view-landing" class="view">
+        <nav class="landing-nav">
+            <div class="landing-nav-inner">
+                <div class="landing-logo">ClipMontage</div>
+                <button class="btn btn-primary btn-small" id="landingSignInBtn">Sign In</button>
+            </div>
+        </nav>
+
+        <section class="hero">
+            <div class="hero-inner">
+                <span class="hero-badge">AI-Powered Video Editing</span>
+                <h1>Turn raw footage into<br><span class="hero-accent">highlight reels</span></h1>
+                <p class="hero-sub">Upload your video and let AI analyze, detect highlights, and generate a polished montage — automatically.</p>
+                <div class="hero-actions">
+                    <button class="btn btn-primary btn-large" id="heroCTABtn">Get Started Free</button>
+                </div>
+                <div class="hero-visual">
+                    <div class="hero-mockup">
+                        <div class="mockup-bar">
+                            <span class="mockup-dot"></span>
+                            <span class="mockup-dot"></span>
+                            <span class="mockup-dot"></span>
+                        </div>
+                        <div class="mockup-content">
+                            <div class="mockup-timeline">
+                                <div class="mockup-track mockup-track-1"></div>
+                                <div class="mockup-track mockup-track-2"></div>
+                                <div class="mockup-track mockup-track-3"></div>
+                            </div>
+                            <div class="mockup-preview"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="features" id="features">
+            <div class="features-inner">
+                <h2 class="section-title">Everything you need</h2>
+                <p class="section-sub">Powerful AI tools that handle the entire editing workflow.</p>
+                <div class="features-grid">
+                    <div class="feature-card">
+                        <div class="feature-icon">
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/>
+                            </svg>
+                        </div>
+                        <h3>AI Analysis</h3>
+                        <p>Vision AI examines every frame to understand content, detect action, and score visual quality.</p>
+                    </div>
+                    <div class="feature-card">
+                        <div class="feature-icon">
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/>
+                            </svg>
+                        </div>
+                        <h3>Auto-Editing</h3>
+                        <p>Highlights are automatically selected and assembled into a cohesive montage with transitions.</p>
+                    </div>
+                    <div class="feature-card">
+                        <div class="feature-icon">
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>
+                            </svg>
+                        </div>
+                        <h3>Quality Scoring</h3>
+                        <p>Each output is graded on visual quality, pacing, and content relevance with actionable feedback.</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="how-it-works">
+            <div class="how-inner">
+                <h2 class="section-title">How it works</h2>
+                <p class="section-sub">Three simple steps to your highlight reel.</p>
+                <div class="steps-row">
+                    <div class="hiw-step">
+                        <div class="hiw-number">1</div>
+                        <h3>Upload</h3>
+                        <p>Drop your video file — MP4, MKV, AVI, MOV, or WebM up to 20 GB.</p>
+                    </div>
+                    <div class="hiw-arrow">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+                    </div>
+                    <div class="hiw-step">
+                        <div class="hiw-number">2</div>
+                        <h3>AI Analyzes</h3>
+                        <p>Vision AI processes frames, detects highlights, and builds your montage.</p>
+                    </div>
+                    <div class="hiw-arrow">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+                    </div>
+                    <div class="hiw-step">
+                        <div class="hiw-number">3</div>
+                        <h3>Download</h3>
+                        <p>Preview your highlight reel, check quality scores, and download instantly.</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="cta-section">
+            <div class="cta-inner">
+                <h2>Ready to create your highlight reel?</h2>
+                <p>Start for free — no credit card required.</p>
+                <button class="btn btn-primary btn-large" id="ctaBottomBtn">Get Started</button>
+            </div>
+        </section>
+
+        <footer class="landing-footer">
+            <p>ClipMontage &mdash; Powered by Vision AI &amp; FFmpeg</p>
+            <p class="version">v4.0.0</p>
+        </footer>
+    </div>
+
+    <!-- ══════════════════════════════════════════════════════════
+         AUTH MODAL (overlay)
+         ══════════════════════════════════════════════════════════ -->
+    <div id="auth-modal" class="modal-overlay" style="display:none;">
+        <div class="modal-backdrop" id="authModalBackdrop"></div>
+        <div class="auth-card">
+            <button class="modal-close" id="authModalClose">&times;</button>
+            <h2 id="authModalTitle">Sign In</h2>
+            <p class="auth-subtitle" id="authModalSubtitle">Sign in to start creating montages</p>
+            <div class="auth-buttons">
+                <button class="btn-google" id="googleSignInBtn">
+                    <svg class="google-icon" viewBox="0 0 24 24" width="20" height="20">
+                        <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z"/>
+                        <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                        <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
+                        <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+                    </svg>
+                    Sign in with Google
+                </button>
+                <div class="auth-divider"><span>or</span></div>
+                <form class="email-auth-form" id="emailAuthForm">
+                    <input type="email" id="authEmail" placeholder="Email" class="auth-input" required>
+                    <input type="password" id="authPassword" placeholder="Password" class="auth-input" required>
+                    <button type="submit" class="btn btn-primary" id="emailSignInBtn">Sign In</button>
+                </form>
+                <button type="button" class="auth-toggle" id="authToggleBtn">Don't have an account? <strong>Sign Up</strong></button>
+            </div>
+            <div class="auth-error" id="authError" style="display:none;"></div>
+        </div>
+    </div>
+
+    <!-- ══════════════════════════════════════════════════════════
+         SETTINGS MODAL
+         ══════════════════════════════════════════════════════════ -->
+    <div id="settings-modal" class="modal-overlay" style="display:none;">
+        <div class="modal-backdrop" id="settingsModalBackdrop"></div>
+        <div class="auth-card" style="max-width:480px;">
+            <button class="modal-close" id="settingsModalClose">&times;</button>
+            <h2>Settings</h2>
+            <p class="auth-subtitle">Configure your AI Vision API token</p>
+            <div class="auth-form-section">
+                <label style="display:block;margin-bottom:6px;font-size:14px;color:var(--text-secondary,#aaa);">HuggingFace API Token</label>
+                <input type="password" id="settingsHfToken" placeholder="hf_..." class="auth-input" style="font-family:monospace;">
+                <p style="font-size:12px;color:var(--text-secondary,#888);margin:8px 0 0;">
+                    Get your free token at <a href="https://huggingface.co/settings/tokens" target="_blank" rel="noopener" style="color:var(--accent,#7c5cfc);">HuggingFace Settings</a>
+                </p>
+                <p style="font-size:12px;color:var(--text-secondary,#888);margin:4px 0 0;">
+                    Initial requests may take 10-30 seconds (model cold start)
+                </p>
+                <div style="margin-top:16px;display:flex;gap:8px;">
+                    <button class="btn btn-primary" id="settingsSaveBtn">Save</button>
+                    <button class="btn btn-secondary" id="settingsClearBtn" style="background:transparent;border:1px solid var(--border,#333);color:var(--text-secondary,#aaa);">Clear Key</button>
+                </div>
+                <div id="settingsStatus" style="margin-top:10px;font-size:13px;display:none;"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ══════════════════════════════════════════════════════════
+         LOADING (shown during Firebase init)
+         ══════════════════════════════════════════════════════════ -->
+    <div id="view-loading" class="view">
+        <div class="loading-indicator">
+            <div class="loading-spinner"></div>
+            <p>Initializing...</p>
+        </div>
+    </div>
+
+    <!-- ══════════════════════════════════════════════════════════
+         APP SHELL (authenticated)
+         ══════════════════════════════════════════════════════════ -->
+    <div id="app-shell" class="app-shell" style="display:none;">
+        <!-- Sidebar -->
+        <aside class="sidebar" id="sidebar">
+            <div class="sidebar-top">
+                <div class="sidebar-logo">ClipMontage</div>
+                <button class="sidebar-close" id="sidebarClose">&times;</button>
+            </div>
+            <nav class="sidebar-nav">
+                <a href="#" class="nav-item active" data-view="dashboard">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+                    <span>Dashboard</span>
+                </a>
+                <a href="#" class="nav-item" data-view="upload">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                    <span>New Project</span>
+                </a>
+                <a href="#" class="nav-item" id="settingsNavBtn">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+                    <span>Settings</span>
+                </a>
+            </nav>
+            <div class="sidebar-user" id="sidebarUser">
+                <img class="user-avatar" id="userAvatar" src="" alt="">
+                <div class="user-info">
+                    <span class="user-name" id="userName"></span>
+                </div>
+                <button class="btn-icon" id="logoutBtn" title="Sign out">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+                </button>
+            </div>
+        </aside>
+
+        <!-- Mobile header bar -->
+        <div class="mobile-bar">
+            <button class="hamburger" id="hamburgerBtn">
+                <span></span><span></span><span></span>
+            </button>
+            <div class="mobile-logo">ClipMontage</div>
+        </div>
+
+        <!-- Main content area -->
+        <main class="main-content">
+            <div class="top-bar">
+                <h1 class="page-title" id="pageTitle">Dashboard</h1>
+            </div>
+
+            <div class="content-area">
+                <!-- ── Dashboard View ── -->
+                <div id="view-dashboard" class="view">
+                    <div class="stats-row" id="statsRow">
+                        <div class="stat-card">
+                            <div class="stat-value" id="statTotal">-</div>
+                            <div class="stat-label">Total Projects</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-value" id="statCompleted">-</div>
+                            <div class="stat-label">Completed</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-value" id="statProcessing">-</div>
+                            <div class="stat-label">Processing</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-value" id="statFailed">-</div>
+                            <div class="stat-label">Failed</div>
+                        </div>
+                    </div>
+
+                    <div class="section-header">
+                        <h2>Projects</h2>
+                        <button class="btn btn-primary btn-small" id="dashNewProjectBtn">New Project</button>
+                    </div>
+
+                    <div class="project-grid" id="projectGrid">
+                        <!-- Rendered by JS -->
+                    </div>
+
+                    <div class="empty-state" id="emptyState" style="display:none;">
+                        <div class="empty-icon">
+                            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
+                        </div>
+                        <h3>No projects yet</h3>
+                        <p>Upload a video to create your first AI-powered highlight reel.</p>
+                        <button class="btn btn-primary" id="emptyNewProjectBtn">New Project</button>
+                    </div>
+                </div>
+
+                <!-- ── Upload View ── -->
+                <div id="view-upload" class="view" style="display:none;">
+                    <div class="upload-card">
+                        <div class="upload-area" id="uploadArea">
+                            <div class="upload-icon">
+                                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                            </div>
+                            <h2>Drop video file here</h2>
+                            <p>or</p>
+                            <label for="fileInput" class="btn btn-primary" style="cursor:pointer;user-select:none;">Select File</label>
+                            <input type="file" id="fileInput" accept=".mp4,.mkv,.avi,.mov,.webm" hidden>
+                            <p class="file-info">Supported: MP4, MKV, AVI, MOV, WebM (max 20 GB)</p>
+                        </div>
+
+                        <div class="selected-file" id="selectedFile" style="display:none;">
+                            <div class="file-details">
+                                <div class="file-icon">
+                                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
+                                </div>
+                                <div>
+                                    <div class="file-name" id="fileName"></div>
+                                    <div class="file-size" id="fileSize"></div>
+                                </div>
+                            </div>
+                            <div id="uploadProgress" style="display:none; margin-top: 1rem;">
+                                <div class="progress-bar" style="height: 8px; background: var(--bg-tertiary, #2a2a3e); border-radius: 4px; overflow: hidden;">
+                                    <div id="uploadProgressFill" style="width: 0%; height: 100%; background: var(--accent, #6366f1); border-radius: 4px; transition: width 0.3s;"></div>
+                                </div>
+                                <span id="uploadProgressLabel" style="font-size: 0.85rem; color: var(--text-secondary, #a1a1aa); margin-top: 0.25rem; display: inline-block;">Uploading 0%</span>
+                            </div>
+                            <div class="file-actions">
+                                <button class="btn btn-primary" id="uploadBtn">Upload &amp; Process</button>
+                                <button class="btn btn-secondary" id="cancelBtn">Cancel</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ── Processing View ── -->
+                <div id="view-processing" class="view" style="display:none;">
+                    <div class="processing-card">
+                        <div class="connection-bar">
+                            <span id="connectionStatus" class="connection-status disconnected">Connecting...</span>
+                        </div>
+
+                        <div class="processing-steps">
+                            <div class="step" id="step1">
+                                <div class="step-dot"></div>
+                                <div class="step-text">Frame Extraction</div>
+                            </div>
+                            <div class="step" id="step2">
+                                <div class="step-dot"></div>
+                                <div class="step-text">AI Analysis</div>
+                            </div>
+                            <div class="step" id="step3">
+                                <div class="step-dot"></div>
+                                <div class="step-text">Highlight Detection</div>
+                            </div>
+                            <div class="step" id="step4">
+                                <div class="step-dot"></div>
+                                <div class="step-text">Video Generation</div>
+                            </div>
+                        </div>
+
+                        <div class="progress-container">
+                            <div class="progress-bar">
+                                <div class="progress-fill" id="progressFill"></div>
+                            </div>
+                            <div class="progress-text" id="progressText">0%</div>
+                        </div>
+
+                        <div class="status-message" id="statusMessage">Preparing...</div>
+
+                        <div class="cancel-area">
+                            <button class="btn btn-secondary btn-small" id="cancelProcessBtn">Cancel Processing</button>
+                        </div>
+
+                        <details class="log-details">
+                            <summary>Processing Log</summary>
+                            <div class="log-output" id="logOutput"></div>
+                        </details>
+                    </div>
+                </div>
+
+                <!-- ── Result View ── -->
+                <div id="view-result" class="view" style="display:none;">
+                    <div class="result-card">
+                        <div class="result-header">
+                            <h2>Processing Complete</h2>
+                        </div>
+
+                        <div class="video-preview" id="videoPreview">
+                            <!-- Video player inserted by JS -->
+                        </div>
+
+                        <div id="qualityGauge" class="quality-gauge-container"></div>
+                        <div id="warningsArea" class="warnings-area" style="display:none;"></div>
+
+                        <div class="result-stats" id="resultStats"></div>
+
+                        <div class="result-actions">
+                            <button class="btn btn-primary btn-large" id="downloadBtn">Download</button>
+                            <button class="btn btn-secondary" id="newUploadBtn">New Project</button>
+                            <button class="btn btn-secondary" id="backToDashBtn">Back to Dashboard</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ── Error View ── -->
+                <div id="view-error" class="view" style="display:none;">
+                    <div class="error-card">
+                        <div class="error-icon">
+                            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+                        </div>
+                        <h2>Something went wrong</h2>
+                        <div class="error-message" id="errorMessage"></div>
+                        <div class="error-actions">
+                            <button class="btn btn-primary" id="retryBtn">Try Again</button>
+                            <button class="btn btn-secondary" id="errorBackBtn">Back to Dashboard</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Toast container -->
+    <div id="toastContainer" class="toast-container"></div>
+
+    <script src="/static/js/models.js?v=5.0"></script>
+    <script src="/static/js/frame-extractor.js?v=5.0"></script>
+    <script src="/static/js/hf-client.js?v=5.0"></script>
+    <script src="/static/js/creative-director.js?v=5.0"></script>
+    <script src="/static/js/video-assembler.js?v=5.0"></script>
+    <script src="/static/js/processing-pipeline.js?v=5.0"></script>
+    <script src="/static/js/main.js?v=5.0"></script>
+</body>
+</html>
