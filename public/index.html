@@ -94,7 +94,7 @@
                     <div class="hiw-step">
                         <div class="hiw-number">1</div>
                         <h3>Upload</h3>
-                        <p>Drop your video file — MP4, MKV, AVI, MOV, or WebM up to 20 GB.</p>
+                        <p>Drop your video file — MP4, MKV, AVI, MOV, or WebM up to 4 GB.</p>
                     </div>
                     <div class="hiw-arrow">
                         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
@@ -126,7 +126,12 @@
 
         <footer class="landing-footer">
             <p>ClipMontage &mdash; Powered by Vision AI &amp; FFmpeg</p>
-            <p class="version">v4.0.0</p>
+            <p style="margin-top:8px;font-size:0.8rem;">
+                <a href="/privacy.html" style="color:var(--text-secondary);text-decoration:none;margin:0 8px;" onmouseover="this.style.color='var(--accent)'" onmouseout="this.style.color='var(--text-secondary)'">Privacy Policy</a>
+                &middot;
+                <a href="/terms.html" style="color:var(--text-secondary);text-decoration:none;margin:0 8px;" onmouseover="this.style.color='var(--accent)'" onmouseout="this.style.color='var(--text-secondary)'">Terms of Service</a>
+            </p>
+            <p class="version">v5.0.0</p>
         </footer>
     </div>
 
@@ -166,24 +171,87 @@
          ══════════════════════════════════════════════════════════ -->
     <div id="settings-modal" class="modal-overlay" style="display:none;">
         <div class="modal-backdrop" id="settingsModalBackdrop"></div>
-        <div class="auth-card" style="max-width:480px;">
+        <div class="auth-card" style="max-width:520px;">
             <button class="modal-close" id="settingsModalClose">&times;</button>
             <h2>Settings</h2>
-            <p class="auth-subtitle">Configure your AI Vision API token</p>
+            <p class="auth-subtitle">Configure Vision AI provider &amp; effects</p>
+
+            <!-- Provider selection -->
             <div class="auth-form-section">
-                <label style="display:block;margin-bottom:6px;font-size:14px;color:var(--text-secondary,#aaa);">HuggingFace API Token</label>
-                <input type="password" id="settingsHfToken" placeholder="hf_..." class="auth-input" style="font-family:monospace;">
-                <p style="font-size:12px;color:var(--text-secondary,#888);margin:8px 0 0;">
-                    Get your free token at <a href="https://huggingface.co/settings/tokens" target="_blank" rel="noopener" style="color:var(--accent,#7c5cfc);">HuggingFace Settings</a>
-                </p>
-                <p style="font-size:12px;color:var(--text-secondary,#888);margin:4px 0 0;">
-                    Initial requests may take 10-30 seconds (model cold start)
-                </p>
-                <div style="margin-top:16px;display:flex;gap:8px;">
+                <label style="display:block;margin-bottom:10px;font-size:14px;font-weight:600;color:var(--text-primary,#fff);">Vision AI Provider</label>
+                <div id="providerRadios" style="display:flex;flex-direction:column;gap:8px;margin-bottom:14px;">
+                    <label class="provider-option" style="display:flex;align-items:center;gap:10px;cursor:pointer;padding:8px 10px;border-radius:8px;border:1px solid var(--border,#333);">
+                        <input type="radio" name="visionProvider" value="groq" id="provGroq">
+                        <span>
+                            <strong>Groq</strong>
+                            <span style="font-size:12px;color:var(--text-secondary,#888);margin-left:8px;">7,000 req/day · Very fast · High quality</span>
+                        </span>
+                    </label>
+                    <label class="provider-option" style="display:flex;align-items:center;gap:10px;cursor:pointer;padding:8px 10px;border-radius:8px;border:1px solid var(--border,#333);">
+                        <input type="radio" name="visionProvider" value="gemini" id="provGemini">
+                        <span>
+                            <strong>Gemini 1.5 Flash</strong>
+                            <span style="font-size:12px;color:var(--text-secondary,#888);margin-left:8px;">1,500 req/day · Fast · Best accuracy</span>
+                        </span>
+                    </label>
+                    <label class="provider-option" style="display:flex;align-items:center;gap:10px;cursor:pointer;padding:8px 10px;border-radius:8px;border:1px solid var(--border,#333);">
+                        <input type="radio" name="visionProvider" value="ollama" id="provOllama">
+                        <span>
+                            <strong>Ollama (Local)</strong>
+                            <span style="font-size:12px;color:var(--text-secondary,#888);margin-left:8px;">Unlimited · GPU dependent · No API key</span>
+                        </span>
+                    </label>
+                    <label class="provider-option" style="display:flex;align-items:center;gap:10px;cursor:pointer;padding:8px 10px;border-radius:8px;border:1px solid var(--border,#333);">
+                        <input type="radio" name="visionProvider" value="huggingface" id="provHF">
+                        <span>
+                            <strong>HuggingFace</strong>
+                            <span style="font-size:12px;color:var(--text-secondary,#888);margin-left:8px;">~100 req/day · Slow (cold start) · Fallback</span>
+                        </span>
+                    </label>
+                </div>
+
+                <!-- Dynamic API key / URL field -->
+                <div id="settingsApiKeySection">
+                    <label id="settingsApiKeyLabel" style="display:block;margin-bottom:6px;font-size:14px;color:var(--text-secondary,#aaa);">API Key</label>
+                    <input type="password" id="settingsApiKey" placeholder="" class="auth-input" style="font-family:monospace;">
+                    <p id="settingsApiKeyHint" style="font-size:12px;color:var(--text-secondary,#888);margin:6px 0 0;"></p>
+                </div>
+
+                <!-- Ollama URL (only shown when Ollama selected) -->
+                <div id="settingsOllamaSection" style="display:none;margin-top:10px;">
+                    <label style="display:block;margin-bottom:6px;font-size:14px;color:var(--text-secondary,#aaa);">Ollama URL</label>
+                    <input type="text" id="settingsOllamaUrl" placeholder="http://localhost:11434" class="auth-input" style="font-family:monospace;">
+                    <p style="font-size:12px;color:var(--text-secondary,#888);margin:4px 0 0;">
+                        Start Ollama with: <code>OLLAMA_ORIGINS=* ollama serve</code>
+                    </p>
+                </div>
+
+                <div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap;">
                     <button class="btn btn-primary" id="settingsSaveBtn">Save</button>
+                    <button class="btn btn-secondary" id="settingsTestBtn" style="background:transparent;border:1px solid var(--accent,#6366f1);color:var(--accent,#6366f1);">Test Connection</button>
                     <button class="btn btn-secondary" id="settingsClearBtn" style="background:transparent;border:1px solid var(--border,#333);color:var(--text-secondary,#aaa);">Clear Key</button>
                 </div>
                 <div id="settingsStatus" style="margin-top:10px;font-size:13px;display:none;"></div>
+            </div>
+
+            <!-- Effects options -->
+            <div class="auth-form-section" style="margin-top:20px;border-top:1px solid var(--border,#333);padding-top:16px;">
+                <label style="display:block;margin-bottom:10px;font-size:14px;font-weight:600;color:var(--text-primary,#fff);">Video Effects</label>
+                <p style="font-size:12px;color:var(--text-secondary,#888);margin:0 0 10px;">Enabling effects requires re-encoding (20–40s processing vs 5s fast copy)</p>
+                <div style="display:flex;flex-direction:column;gap:8px;">
+                    <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:14px;">
+                        <input type="checkbox" id="effectTransitions" style="accent-color:var(--accent,#6366f1);">
+                        <span><strong>Transitions</strong> — 0.3s xfade between clips</span>
+                    </label>
+                    <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:14px;">
+                        <input type="checkbox" id="effectTextOverlay" style="accent-color:var(--accent,#6366f1);">
+                        <span><strong>Text Overlay</strong> — "ACE!" / "3 KILLS" labels on clips</span>
+                    </label>
+                    <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:14px;">
+                        <input type="checkbox" id="effectSlowMo" style="accent-color:var(--accent,#6366f1);">
+                        <span><strong>Slow Motion</strong> — 0.5× speed on top-scoring clips</span>
+                    </label>
+                </div>
             </div>
         </div>
     </div>
@@ -299,7 +367,7 @@
                             <p>or</p>
                             <label for="fileInput" class="btn btn-primary" style="cursor:pointer;user-select:none;">Select File</label>
                             <input type="file" id="fileInput" accept=".mp4,.mkv,.avi,.mov,.webm" hidden>
-                            <p class="file-info">Supported: MP4, MKV, AVI, MOV, WebM (max 20 GB)</p>
+                            <p class="file-info">Supported: MP4, MKV, AVI, MOV, WebM (max 4 GB)</p>
                         </div>
 
                         <div class="selected-file" id="selectedFile" style="display:none;">
@@ -414,15 +482,20 @@
         </main>
     </div>
 
+    <!-- Mobile sidebar overlay -->
+    <div id="sidebarOverlay" class="sidebar-overlay"></div>
+
     <!-- Toast container -->
     <div id="toastContainer" class="toast-container"></div>
 
-    <script src="/static/js/models.js?v=5.0"></script>
-    <script src="/static/js/frame-extractor.js?v=5.0"></script>
-    <script src="/static/js/hf-client.js?v=5.0"></script>
-    <script src="/static/js/creative-director.js?v=5.0"></script>
-    <script src="/static/js/video-assembler.js?v=5.0"></script>
-    <script src="/static/js/processing-pipeline.js?v=5.0"></script>
-    <script src="/static/js/main.js?v=5.0"></script>
+    <script src="/static/js/models.js?v=5.1"></script>
+    <script src="/static/js/vision-client.js?v=5.1"></script>
+    <script src="/static/js/hf-client.js?v=5.1"></script>
+    <script src="/static/js/audio-analyzer.js?v=5.1"></script>
+    <script src="/static/js/frame-extractor.js?v=5.1"></script>
+    <script src="/static/js/creative-director.js?v=5.1"></script>
+    <script src="/static/js/video-assembler.js?v=5.1"></script>
+    <script src="/static/js/processing-pipeline.js?v=5.1"></script>
+    <script src="/static/js/main.js?v=5.1"></script>
 </body>
 </html>

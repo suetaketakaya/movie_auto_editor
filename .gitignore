@@ -54,6 +54,8 @@ nul
 .firebase/
 *-firebase-adminsdk-*.json
 firebase-service-account.json
+firebase-sa.json.json
+*-sa.json.json
 
 # Firebase Hosting build
 public/

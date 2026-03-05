@@ -3,8 +3,8 @@
 # Ollama Settings
 ollama:
   base_url: "http://localhost:11434"
-  vision_model: "qwen2-vl:7b"  # qwen2-vl:7b (推奨), llama3.2-vision, llava:13b
-  thinking_model: "qwen2-vl:7b"  # Using same model for thinking
+  vision_model: "llama3.2-vision"  # qwen2-vl:7b (推奨), llama3.2-vision, llava:13b
+  thinking_model: "llama3.2-vision"  # Using same model for thinking
   timeout: 240
   use_llamacpp: false  # Set to true to use llama.cpp backend
 
@@ -21,7 +21,7 @@ multi_model:
 
 # Video Processing Settings
 video:
-  input_dir: "D:/公開動画/素材"
+  input_dir: "./input"
   output_dir: "./output"
   frames_dir: "./frames"
   sample_interval: 2  # seconds between frame captures

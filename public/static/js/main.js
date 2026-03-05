@@ -1,4 +1,4 @@
-// ClipMontage Frontend — v4.0
+// ClipMontage Frontend — v5.0
 // SPA with Router, View Controllers
 // Firebase Auth + Browser-side Processing Pipeline
 
@@ -215,7 +215,24 @@ async function initFirebase() {
         });
         firebaseAuth = firebase.auth();
 
+        // Safety timeout: if onAuthStateChanged never fires (e.g. demo project / network issue),
+        // fall back to showing the app after 12 seconds so users are never stuck on loading.
+        let authResolved = false;
+        const authFallbackTimer = setTimeout(() => {
+            if (!authResolved) {
+                console.warn('Firebase auth timeout — falling back to app-shell (unauthenticated)');
+                authResolved = true;
+                firebaseEnabled = false;
+                hideLoading();
+                showApp();
+            }
+        }, 12000);
+
         firebaseAuth.onAuthStateChanged(async (user) => {
+            if (authResolved) return; // already handled by timeout
+            authResolved = true;
+            clearTimeout(authFallbackTimer);
+
             if (tokenRefreshTimer) {
                 clearInterval(tokenRefreshTimer);
                 tokenRefreshTimer = null;
@@ -337,12 +354,55 @@ function clearAuthError() {
 // SETTINGS
 // ══════════════════════════════════════════════════════════
 
+const PROVIDER_META = {
+    groq: {
+        label: 'Groq API Key',
+        placeholder: 'gsk_...',
+        hint: 'Get your free key at <a href="https://console.groq.com/keys" target="_blank" rel="noopener" style="color:var(--accent,#7c5cfc);">console.groq.com</a> — 7,000 req/day free',
+    },
+    gemini: {
+        label: 'Gemini API Key',
+        placeholder: 'AIza...',
+        hint: 'Get your free key at <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener" style="color:var(--accent,#7c5cfc);">Google AI Studio</a> — 1,500 req/day free',
+    },
+    ollama: {
+        label: '',
+        placeholder: '',
+        hint: '',
+    },
+    huggingface: {
+        label: 'HuggingFace API Token',
+        placeholder: 'hf_...',
+        hint: 'Get your free token at <a href="https://huggingface.co/settings/tokens" target="_blank" rel="noopener" style="color:var(--accent,#7c5cfc);">HuggingFace Settings</a> — initial requests may take 10–30s (cold start)',
+    },
+};
+
 function openSettingsModal() {
     const modal = document.getElementById('settings-modal');
     if (modal) modal.style.display = 'flex';
-    const input = document.getElementById('settingsHfToken');
-    const saved = localStorage.getItem('hf_api_key');
-    if (input && saved) input.value = saved;
+
+    // Load saved provider
+    const savedProvider = sessionStorage.getItem('vision_provider') || 'huggingface';
+    const radio = document.querySelector(`input[name="visionProvider"][value="${savedProvider}"]`);
+    if (radio) radio.checked = true;
+
+    // Load saved API key
+    const savedKey = sessionStorage.getItem('vision_api_key') || sessionStorage.getItem('hf_api_key') || '';
+    const apiKeyInput = document.getElementById('settingsApiKey');
+    if (apiKeyInput) apiKeyInput.value = savedKey;
+
+    // Load Ollama URL
+    const ollamaUrl = sessionStorage.getItem('ollama_url') || 'http://localhost:11434';
+    const ollamaInput = document.getElementById('settingsOllamaUrl');
+    if (ollamaInput) ollamaInput.value = ollamaUrl;
+
+    // Load effect checkboxes
+    document.getElementById('effectTransitions').checked = sessionStorage.getItem('effect_transitions') !== 'false';
+    document.getElementById('effectTextOverlay').checked = sessionStorage.getItem('effect_textOverlay') !== 'false';
+    document.getElementById('effectSlowMo').checked = sessionStorage.getItem('effect_slowMo') !== 'false';
+
+    updateSettingsProviderUI(savedProvider);
+    clearSettingsStatus();
 }
 
 function closeSettingsModal() {
@@ -350,36 +410,90 @@ function closeSettingsModal() {
     if (modal) modal.style.display = 'none';
 }
 
+function updateSettingsProviderUI(provider) {
+    const meta = PROVIDER_META[provider] || PROVIDER_META.huggingface;
+    const labelEl = document.getElementById('settingsApiKeyLabel');
+    const inputEl = document.getElementById('settingsApiKey');
+    const hintEl = document.getElementById('settingsApiKeyHint');
+    const apiSection = document.getElementById('settingsApiKeySection');
+    const ollamaSection = document.getElementById('settingsOllamaSection');
+
+    const isOllama = provider === 'ollama';
+    if (apiSection) apiSection.style.display = isOllama ? 'none' : 'block';
+    if (ollamaSection) ollamaSection.style.display = isOllama ? 'block' : 'none';
+
+    if (labelEl) labelEl.textContent = meta.label;
+    if (inputEl) inputEl.placeholder = meta.placeholder;
+    if (hintEl) hintEl.innerHTML = meta.hint;
+}
+
 function saveSettings() {
-    const input = document.getElementById('settingsHfToken');
-    const status = document.getElementById('settingsStatus');
-    const key = input ? input.value.trim() : '';
-    if (key) {
-        localStorage.setItem('hf_api_key', key);
-        if (status) {
-            status.style.display = 'block';
-            status.style.color = '#4ade80';
-            status.textContent = 'API token saved. It will be used for video analysis.';
-        }
-    } else {
-        if (status) {
-            status.style.display = 'block';
-            status.style.color = '#f87171';
-            status.textContent = 'Please enter a valid API token.';
-        }
+    const provider = document.querySelector('input[name="visionProvider"]:checked')?.value || 'huggingface';
+    const apiKey = (document.getElementById('settingsApiKey')?.value || '').trim();
+    const ollamaUrl = (document.getElementById('settingsOllamaUrl')?.value || '').trim() || 'http://localhost:11434';
+
+    const effects = {
+        transitions: document.getElementById('effectTransitions')?.checked,
+        textOverlay: document.getElementById('effectTextOverlay')?.checked,
+        slowMo: document.getElementById('effectSlowMo')?.checked,
+    };
+
+    const isOllama = provider === 'ollama';
+
+    if (!isOllama && !apiKey) {
+        showSettingsStatus('Please enter a valid API key.', 'error');
+        return;
     }
+
+    // Save provider settings
+    VisionProviderFactory.saveSettings({ provider, apiKey, ollamaUrl });
+
+    // Save effect settings
+    sessionStorage.setItem('effect_transitions', effects.transitions);
+    sessionStorage.setItem('effect_textOverlay', effects.textOverlay);
+    sessionStorage.setItem('effect_slowMo', effects.slowMo);
+
+    showSettingsStatus('Settings saved for this session.', 'success');
 }
 
 function clearSettings() {
-    localStorage.removeItem('hf_api_key');
-    const input = document.getElementById('settingsHfToken');
-    const status = document.getElementById('settingsStatus');
-    if (input) input.value = '';
-    if (status) {
-        status.style.display = 'block';
-        status.style.color = '#facc15';
-        status.textContent = 'API token cleared. You will need to set one before processing.';
+    ['vision_provider', 'vision_api_key', 'hf_api_key', 'ollama_url',
+     'effect_transitions', 'effect_textOverlay', 'effect_slowMo'].forEach((k) => sessionStorage.removeItem(k));
+
+    const apiKeyInput = document.getElementById('settingsApiKey');
+    if (apiKeyInput) apiKeyInput.value = '';
+
+    showSettingsStatus('Settings cleared. You will need to reconfigure before processing.', 'warning');
+}
+
+async function testConnection() {
+    const provider = document.querySelector('input[name="visionProvider"]:checked')?.value || 'huggingface';
+    const apiKey = (document.getElementById('settingsApiKey')?.value || '').trim();
+    const ollamaUrl = (document.getElementById('settingsOllamaUrl')?.value || '').trim() || 'http://localhost:11434';
+
+    showSettingsStatus('Testing connection...', 'info');
+
+    try {
+        const client = VisionProviderFactory.create({ provider, apiKey, ollamaUrl });
+        await client.testConnection();
+        showSettingsStatus(`Connection to ${provider} successful!`, 'success');
+    } catch (err) {
+        showSettingsStatus(`Connection failed: ${err.message}`, 'error');
     }
+}
+
+function showSettingsStatus(message, type) {
+    const status = document.getElementById('settingsStatus');
+    if (!status) return;
+    const colors = { success: '#4ade80', error: '#f87171', warning: '#facc15', info: '#60a5fa' };
+    status.style.display = 'block';
+    status.style.color = colors[type] || '#aaa';
+    status.textContent = message;
+}
+
+function clearSettingsStatus() {
+    const status = document.getElementById('settingsStatus');
+    if (status) status.style.display = 'none';
 }
 
 // ══════════════════════════════════════════════════════════
@@ -448,9 +562,9 @@ const UploadView = {
             return;
         }
 
-        const maxSize = 20 * 1024 * 1024 * 1024;
+        const maxSize = 4 * 1024 * 1024 * 1024;
         if (file.size > maxSize) {
-            showToast('File too large. Maximum size: 20 GB', 'error');
+            showToast('File too large. Maximum size: 4 GB (browser memory limit)', 'error');
             return;
         }
 
@@ -471,10 +585,11 @@ const UploadView = {
     async upload() {
         if (!selectedFile) return;
 
-        // Check for API key before starting
-        const apiKey = localStorage.getItem('hf_api_key');
-        if (!apiKey) {
-            showToast('Please set your HuggingFace API token in Settings first.', 'error');
+        // Check for API key before starting (skip check for Ollama)
+        const provider = sessionStorage.getItem('vision_provider') || 'huggingface';
+        const apiKey = sessionStorage.getItem('vision_api_key') || sessionStorage.getItem('hf_api_key') || '';
+        if (provider !== 'ollama' && !apiKey) {
+            showToast('Please configure your Vision AI API key in Settings first.', 'error');
             openSettingsModal();
             return;
         }
@@ -523,16 +638,16 @@ const ProcessingView = {
     },
 
     async startLocalProcessing(file) {
-        const apiKey = localStorage.getItem('hf_api_key');
-        if (!apiKey) {
-            showError('HuggingFace API token not set. Please configure it in Settings.');
+        const providerSettings = VisionProviderFactory.loadSettings();
+        if (providerSettings.provider !== 'ollama' && !providerSettings.apiKey) {
+            showError('Vision AI API key not set. Please configure it in Settings.');
             return;
         }
 
         processingStartTime = Date.now();
 
         activePipeline = new ProcessingPipeline({
-            apiKey,
+            providerSettings,
             onProgress: (data) => handleProgressUpdate(data),
             onLog: (msg) => addLog(msg),
             onComplete: (blob, stats) => {
@@ -603,8 +718,12 @@ const ResultView = {
 
         // Stats
         const procTime = stats.processingTime || '0';
+        const providerLabel = (stats.provider || 'huggingface').toUpperCase();
+        const peakSecs = stats.audioEnergySecs || 0;
         let statsHtml = `
             <p><strong>Processing time:</strong> ${procTime}s</p>
+            <p><strong>Vision AI:</strong> ${escapeHtml(providerLabel)}</p>
+            <p><strong>Audio peaks detected:</strong> ${peakSecs} seconds</p>
             <p><strong>Clips detected:</strong> ${stats.clipCount || 0}</p>
             <p><strong>Total duration:</strong> ${(stats.totalDuration || 0).toFixed(1)}s</p>
             <p><strong>Output size:</strong> ${formatFileSize(stats.outputSize || 0)}</p>
@@ -809,8 +928,15 @@ function setupEventListeners() {
     if (settingsBackdrop) settingsBackdrop.addEventListener('click', closeSettingsModal);
     const settingsSave = document.getElementById('settingsSaveBtn');
     const settingsClear = document.getElementById('settingsClearBtn');
+    const settingsTest = document.getElementById('settingsTestBtn');
     if (settingsSave) settingsSave.addEventListener('click', saveSettings);
     if (settingsClear) settingsClear.addEventListener('click', clearSettings);
+    if (settingsTest) settingsTest.addEventListener('click', testConnection);
+
+    // Provider radio buttons → update UI dynamically
+    document.querySelectorAll('input[name="visionProvider"]').forEach((radio) => {
+        radio.addEventListener('change', (e) => updateSettingsProviderUI(e.target.value));
+    });
 
     // Sidebar navigation
     document.querySelectorAll('.nav-item[data-view]').forEach(item => {
