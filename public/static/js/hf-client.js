@@ -2,15 +2,21 @@
 // Extends VisionProvider from vision-client.js
 
 class HuggingFaceVisionClient extends VisionProvider {
-    constructor(apiKey) {
+    // Default model list — can be overridden by passing a custom model in settings
+    static DEFAULT_MODELS = [
+        'meta-llama/Llama-3.2-11B-Vision-Instruct',
+        'mistralai/Mistral-Small-3.1-24B-Instruct-2503',
+    ];
+
+    constructor(apiKey, hfModel) {
         super();
         if (!apiKey) throw new Error('HuggingFace API token is required');
         this._apiKey = apiKey;
-        this._models = [
-            'Qwen/Qwen2.5-VL-7B-Instruct',
-            'meta-llama/Llama-3.2-11B-Vision-Instruct',
-            'mistralai/Mistral-Small-3.1-24B-Instruct-2503',
-        ];
+        // If the user supplied a custom model, put it first
+        const customModel = (hfModel || '').trim();
+        this._models = customModel
+            ? [customModel, ...HuggingFaceVisionClient.DEFAULT_MODELS.filter((m) => m !== customModel)]
+            : [...HuggingFaceVisionClient.DEFAULT_MODELS];
         this._currentModelIndex = 0;
         this._baseUrl = 'https://router.huggingface.co/api/inference-endpoints/models';
         this._maxRetries = 3;
@@ -186,6 +192,12 @@ class HuggingFaceVisionClient extends VisionProvider {
                     console.warn(`[HuggingFace] Model cold-starting: ${model}. Waiting ${this._coldStartRetryDelay / 1000}s... (this is normal for free-tier models)`);
                     await new Promise((r) => setTimeout(r, this._coldStartRetryDelay));
                     lastError = new Error(`HuggingFace model is warming up (503). Retrying...`);
+                    continue;
+                }
+                if (resp.status === 404) {
+                    console.warn(`[HuggingFace] Model not available on serverless endpoint (404): ${model}, switching model...`);
+                    this._rotateModel();
+                    lastError = new Error(`HuggingFace API error 404: Not Found`);
                     continue;
                 }
                 if (!resp.ok) {

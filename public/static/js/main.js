@@ -25,6 +25,9 @@ let lastResultBlob = null;
 let lastResultStats = null;
 let processingStartTime = null;
 
+// Live progress snapshot — updated by handleProgressUpdate(), read by dashboard card
+let currentProgressData = { percent: 0, stage: '', message: 'Preparing...' };
+
 const BACKEND_URL = window.location.hostname === 'localhost'
     ? ''
     : 'https://movie-auto-editor-1.onrender.com';
@@ -185,11 +188,13 @@ async function initFirebase() {
     try {
         let config;
         try {
-            const resp = await fetch(BACKEND_URL + '/api/config/firebase');
+            const resp = await fetch(BACKEND_URL + '/api/config/firebase', {
+                signal: AbortSignal.timeout(3000),
+            });
             if (resp.ok && resp.headers.get('content-type')?.includes('application/json')) {
                 config = await resp.json();
             }
-        } catch (_) { /* backend not reachable */ }
+        } catch (_) { /* backend not reachable or timed out — use fallback */ }
 
         if (!config) {
             console.warn('Could not fetch Firebase config from backend, using fallback');
@@ -386,21 +391,21 @@ function openSettingsModal() {
     const radio = document.querySelector(`input[name="visionProvider"][value="${savedProvider}"]`);
     if (radio) radio.checked = true;
 
-    // Load saved API key
-    const savedKey = sessionStorage.getItem('vision_api_key') || sessionStorage.getItem('hf_api_key') || '';
-    const apiKeyInput = document.getElementById('settingsApiKey');
-    if (apiKeyInput) apiKeyInput.value = savedKey;
-
     // Load Ollama URL
     const ollamaUrl = sessionStorage.getItem('ollama_url') || 'http://localhost:11434';
     const ollamaInput = document.getElementById('settingsOllamaUrl');
     if (ollamaInput) ollamaInput.value = ollamaUrl;
+
+    // Load HuggingFace custom model
+    const hfModelInput = document.getElementById('settingsHfModel');
+    if (hfModelInput) hfModelInput.value = sessionStorage.getItem('hf_model') || '';
 
     // Load effect checkboxes
     document.getElementById('effectTransitions').checked = sessionStorage.getItem('effect_transitions') !== 'false';
     document.getElementById('effectTextOverlay').checked = sessionStorage.getItem('effect_textOverlay') !== 'false';
     document.getElementById('effectSlowMo').checked = sessionStorage.getItem('effect_slowMo') !== 'false';
 
+    // updateSettingsProviderUI also loads per-provider key
     updateSettingsProviderUI(savedProvider);
     clearSettingsStatus();
 }
@@ -417,20 +422,28 @@ function updateSettingsProviderUI(provider) {
     const hintEl = document.getElementById('settingsApiKeyHint');
     const apiSection = document.getElementById('settingsApiKeySection');
     const ollamaSection = document.getElementById('settingsOllamaSection');
+    const hfModelSection = document.getElementById('settingsHfModelSection');
 
     const isOllama = provider === 'ollama';
+    const isHuggingFace = provider === 'huggingface';
     if (apiSection) apiSection.style.display = isOllama ? 'none' : 'block';
     if (ollamaSection) ollamaSection.style.display = isOllama ? 'block' : 'none';
+    if (hfModelSection) hfModelSection.style.display = isHuggingFace ? 'block' : 'none';
 
     if (labelEl) labelEl.textContent = meta.label;
     if (inputEl) inputEl.placeholder = meta.placeholder;
     if (hintEl) hintEl.innerHTML = meta.hint;
+
+    // Auto-fill the saved key for this provider
+    const savedKey = VisionProviderFactory.getKeyForProvider(provider);
+    if (inputEl) inputEl.value = savedKey;
 }
 
 function saveSettings() {
     const provider = document.querySelector('input[name="visionProvider"]:checked')?.value || 'huggingface';
     const apiKey = (document.getElementById('settingsApiKey')?.value || '').trim();
     const ollamaUrl = (document.getElementById('settingsOllamaUrl')?.value || '').trim() || 'http://localhost:11434';
+    const hfModel = (document.getElementById('settingsHfModel')?.value || '').trim();
 
     const effects = {
         transitions: document.getElementById('effectTransitions')?.checked,
@@ -445,8 +458,8 @@ function saveSettings() {
         return;
     }
 
-    // Save provider settings
-    VisionProviderFactory.saveSettings({ provider, apiKey, ollamaUrl });
+    // Save provider settings (per-provider key)
+    VisionProviderFactory.saveSettings({ provider, apiKey, ollamaUrl, hfModel });
 
     // Save effect settings
     sessionStorage.setItem('effect_transitions', effects.transitions);
@@ -457,7 +470,8 @@ function saveSettings() {
 }
 
 function clearSettings() {
-    ['vision_provider', 'vision_api_key', 'hf_api_key', 'ollama_url',
+    ['vision_provider', 'vision_api_key', 'hf_api_key', 'ollama_url', 'hf_model',
+     'vision_api_key_groq', 'vision_api_key_gemini', 'vision_api_key_huggingface',
      'effect_transitions', 'effect_textOverlay', 'effect_slowMo'].forEach((k) => sessionStorage.removeItem(k));
 
     const apiKeyInput = document.getElementById('settingsApiKey');
@@ -501,9 +515,18 @@ function clearSettingsStatus() {
 // ══════════════════════════════════════════════════════════
 
 const DashboardView = {
+    _refreshInterval: null,
+
     async init() {
-        // Local-only mode: show stats from last session if available
-        document.getElementById('statTotal').textContent = lastResultBlob ? '1' : '0';
+        // Clear any previous auto-refresh interval
+        if (this._refreshInterval) {
+            clearInterval(this._refreshInterval);
+            this._refreshInterval = null;
+        }
+
+        // Stats
+        const total = (activePipeline ? 1 : 0) + (lastResultBlob ? 1 : 0);
+        document.getElementById('statTotal').textContent = total || '0';
         document.getElementById('statCompleted').textContent = lastResultBlob ? '1' : '0';
         document.getElementById('statProcessing').textContent = activePipeline ? '1' : '0';
         document.getElementById('statFailed').textContent = '0';
@@ -511,12 +534,18 @@ const DashboardView = {
         const grid = document.getElementById('projectGrid');
         const empty = document.getElementById('emptyState');
 
+        let html = '';
+
+        // In-progress card
+        if (activePipeline) {
+            html += this._renderProcessingCard();
+        }
+
+        // Completed result card
         if (lastResultBlob) {
-            empty.style.display = 'none';
-            grid.style.display = 'grid';
             const stats = lastResultStats || {};
-            grid.innerHTML = `
-                <div class="project-card" data-status="completed" style="cursor:pointer;">
+            html += `
+                <div class="project-card" id="lastResultCard" data-status="completed" style="cursor:pointer;">
                     <div class="project-card-header">
                         <span class="project-card-name">Last Result</span>
                         <span class="project-status status-completed">completed</span>
@@ -526,14 +555,67 @@ const DashboardView = {
                     </div>
                 </div>
             `;
-            grid.querySelector('.project-card').addEventListener('click', () => {
-                Router.navigate('result', { fromLocal: true });
-            });
+        }
+
+        if (html) {
+            empty.style.display = 'none';
+            grid.style.display = 'grid';
+            grid.innerHTML = html;
+
+            if (activePipeline) {
+                grid.querySelector('#activeProcessingCard').addEventListener('click', () => {
+                    Router.navigate('processing');
+                });
+                // Auto-refresh the processing card every second
+                this._refreshInterval = setInterval(() => {
+                    // Stop if pipeline finished or card left the DOM
+                    if (!activePipeline || !document.getElementById('dashProgressFill')) {
+                        clearInterval(this._refreshInterval);
+                        this._refreshInterval = null;
+                        if (!activePipeline) DashboardView.init();
+                        return;
+                    }
+                    updateDashboardProcessingCard();
+                }, 1000);
+            }
+
+            const resultCard = grid.querySelector('#lastResultCard');
+            if (resultCard) {
+                resultCard.addEventListener('click', () => {
+                    Router.navigate('result', { fromLocal: true });
+                });
+            }
         } else {
             grid.innerHTML = '';
             grid.style.display = 'none';
             empty.style.display = 'block';
         }
+    },
+
+    _renderProcessingCard() {
+        const pct = currentProgressData.percent;
+        const msg = escapeHtml(currentProgressData.message || 'Processing...');
+        const name = selectedFile ? escapeHtml(selectedFile.name) : 'Video';
+        return `
+            <div class="project-card" id="activeProcessingCard" data-status="processing" style="cursor:pointer;">
+                <div class="project-card-header">
+                    <span class="project-card-name">${name}</span>
+                    <span class="project-status status-processing">processing</span>
+                </div>
+                <div style="margin:10px 0 8px;">
+                    <div style="height:4px;background:var(--bg-tertiary);border-radius:2px;overflow:hidden;">
+                        <div id="dashProgressFill" style="width:${pct}%;height:100%;background:var(--accent);border-radius:2px;transition:width 0.5s;"></div>
+                    </div>
+                    <div style="display:flex;justify-content:space-between;margin-top:5px;">
+                        <span id="dashProgressMsg" style="font-size:0.75rem;color:var(--text-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;margin-right:8px;">${msg}</span>
+                        <span id="dashProgressPct" style="font-size:0.75rem;color:var(--accent);font-weight:600;flex-shrink:0;">${pct}%</span>
+                    </div>
+                </div>
+                <div class="project-card-meta">
+                    <span class="project-card-date" style="color:var(--accent);font-size:0.75rem;">View progress →</span>
+                </div>
+            </div>
+        `;
     },
 };
 
@@ -614,7 +696,21 @@ const UploadView = {
 
 const ProcessingView = {
     async init(opts = {}) {
-        // Reset UI
+        // If navigating back to an active pipeline, restore current state without resetting
+        if (activePipeline && !opts.start) {
+            updateConnectionStatus('local');
+            const { percent, stage, message } = currentProgressData;
+            const progressFill = document.getElementById('progressFill');
+            const progressText = document.getElementById('progressText');
+            const statusMessage = document.getElementById('statusMessage');
+            if (progressFill) progressFill.style.width = `${percent}%`;
+            if (progressText) progressText.textContent = `${percent}%`;
+            if (statusMessage) statusMessage.textContent = message || 'Processing...';
+            if (stage) updateStepIndicators(stage);
+            return;
+        }
+
+        // Reset UI for a new processing run
         const progressFill = document.getElementById('progressFill');
         const progressText = document.getElementById('progressText');
         const statusMessage = document.getElementById('statusMessage');
@@ -644,6 +740,8 @@ const ProcessingView = {
             return;
         }
 
+        // Reset progress snapshot for the new run
+        currentProgressData = { percent: 0, stage: '', message: 'Preparing...' };
         processingStartTime = Date.now();
 
         activePipeline = new ProcessingPipeline({
@@ -768,6 +866,12 @@ function handleProgressUpdate(data) {
     if (type === 'error') { showError(error || message || 'Processing failed'); return; }
     if (type === 'completion') { handleProcessingComplete(outputs); return; }
 
+    // Keep global snapshot in sync for dashboard card
+    if (progress !== undefined) currentProgressData.percent = progress;
+    if (stage) currentProgressData.stage = stage;
+    if (message || stage) currentProgressData.message = message || stage || '';
+    updateDashboardProcessingCard();
+
     const progressFill = document.getElementById('progressFill');
     const progressText = document.getElementById('progressText');
     const statusMessage = document.getElementById('statusMessage');
@@ -785,6 +889,17 @@ function handleProgressUpdate(data) {
         updateStepIndicators(stage);
         addLog('[' + stage + '] ' + (message || ''));
     }
+}
+
+function updateDashboardProcessingCard() {
+    const fill = document.getElementById('dashProgressFill');
+    const msg = document.getElementById('dashProgressMsg');
+    const pct = document.getElementById('dashProgressPct');
+    if (!fill) return;
+    const p = currentProgressData.percent;
+    fill.style.width = `${p}%`;
+    if (msg) msg.textContent = currentProgressData.message || 'Processing...';
+    if (pct) pct.textContent = `${p}%`;
 }
 
 function updateStepIndicators(stage) {

@@ -226,6 +226,15 @@
                     </p>
                 </div>
 
+                <!-- HuggingFace custom model (only shown when HuggingFace selected) -->
+                <div id="settingsHfModelSection" style="display:none;margin-top:10px;">
+                    <label style="display:block;margin-bottom:6px;font-size:14px;color:var(--text-secondary,#aaa);">Model ID <span style="font-weight:400;">(optional)</span></label>
+                    <input type="text" id="settingsHfModel" placeholder="e.g. Qwen/Qwen2-VL-7B-Instruct" class="auth-input" style="font-family:monospace;">
+                    <p style="font-size:12px;color:var(--text-secondary,#888);margin:4px 0 0;">
+                        Specify a vision model available on HuggingFace Inference Providers. Leave blank to use defaults. Note: free-tier model availability changes frequently — if you see 404 errors, try a different model.
+                    </p>
+                </div>
+
                 <div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap;">
                     <button class="btn btn-primary" id="settingsSaveBtn">Save</button>
                     <button class="btn btn-secondary" id="settingsTestBtn" style="background:transparent;border:1px solid var(--accent,#6366f1);color:var(--accent,#6366f1);">Test Connection</button>
@@ -489,13 +498,13 @@
     <div id="toastContainer" class="toast-container"></div>
 
     <script src="/static/js/models.js?v=5.1"></script>
-    <script src="/static/js/vision-client.js?v=5.1"></script>
-    <script src="/static/js/hf-client.js?v=5.1"></script>
+    <script src="/static/js/vision-client.js?v=5.3"></script>
+    <script src="/static/js/hf-client.js?v=5.3"></script>
     <script src="/static/js/audio-analyzer.js?v=5.1"></script>
     <script src="/static/js/frame-extractor.js?v=5.1"></script>
     <script src="/static/js/creative-director.js?v=5.1"></script>
     <script src="/static/js/video-assembler.js?v=5.1"></script>
     <script src="/static/js/processing-pipeline.js?v=5.1"></script>
-    <script src="/static/js/main.js?v=5.1"></script>
+    <script src="/static/js/main.js?v=5.4"></script>
 </body>
 </html>
