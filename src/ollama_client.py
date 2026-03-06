@@ -179,8 +179,13 @@ Only respond with valid JSON, no additional text."""
 
         timeline_text = "\n".join(timeline)
 
+        # 動画の実際の尺を計算してAIに伝える
+        timestamps = [r.get("timestamp", 0) for r in analysis_results]
+        video_duration = max(timestamps) + 2.0 if timestamps else 0.0
+
         return f"""You are a video editing assistant. Based on the following FPS game frame analysis timeline, identify the best highlight clips.
 
+Video duration: {video_duration:.1f} seconds
 Timeline:
 {timeline_text}
 
@@ -191,14 +196,11 @@ Criteria for highlight clips:
 4. Minimum clip length: 10 seconds
 5. Maximum clip length: 30 seconds
 6. Avoid overlapping clips
+7. All timestamps MUST be within 0 and {video_duration:.1f} seconds
 
-Respond with JSON in this format:
-{{
-    "clips": [
-        {{"start": 10.0, "end": 25.0, "reason": "3 consecutive kills"}},
-        {{"start": 45.0, "end": 60.0, "reason": "intense firefight"}}
-    ]
-}}
+If there are no kills or high-action scenes, return an empty clips array.
+Respond with JSON using ONLY timestamps that appear in the timeline above:
+{{"clips": []}}
 
 Only respond with valid JSON, no additional text."""
 

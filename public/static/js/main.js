@@ -233,6 +233,13 @@ async function initFirebase() {
             }
         }, 12000);
 
+        // Process redirect result (signInWithRedirect flow) — errors surface here
+        firebaseAuth.getRedirectResult().catch((e) => {
+            if (e.code && e.code !== 'auth/no-current-user') {
+                showAuthError(e.message);
+            }
+        });
+
         firebaseAuth.onAuthStateChanged(async (user) => {
             if (authResolved) return; // already handled by timeout
             authResolved = true;
@@ -306,7 +313,9 @@ async function signInWithGoogle() {
     clearAuthError();
     try {
         const provider = new firebase.auth.GoogleAuthProvider();
-        await firebaseAuth.signInWithPopup(provider);
+        // signInWithRedirect avoids COOP: same-origin conflict that breaks popups
+        // (COOP is required for SharedArrayBuffer / ffmpeg.wasm)
+        await firebaseAuth.signInWithRedirect(provider);
     } catch (e) {
         showAuthError(e.message);
     }
@@ -488,9 +497,15 @@ async function testConnection() {
     showSettingsStatus('Testing connection...', 'info');
 
     try {
-        const client = VisionProviderFactory.create({ provider, apiKey, ollamaUrl });
-        await client.testConnection();
-        showSettingsStatus(`Connection to ${provider} successful!`, 'success');
+        const client = VisionProviderFactory.create({ provider, apiKey, ollamaUrl, hfModel: sessionStorage.getItem('hf_model') || '' });
+        const result = await client.testConnection();
+        if (result && typeof result === 'object' && result.available) {
+            const availableList = result.available.join(', ');
+            const unavailableList = result.unavailable.length ? ` (404: ${result.unavailable.join(', ')})` : '';
+            showSettingsStatus(`Connected! Available models: ${availableList}${unavailableList}`, 'success');
+        } else {
+            showSettingsStatus(`Connection to ${provider} successful!`, 'success');
+        }
     } catch (err) {
         showSettingsStatus(`Connection failed: ${err.message}`, 'error');
     }

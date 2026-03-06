@@ -1,5 +1,5 @@
 // ClipMontage — Browser Frame Extractor (Video + Canvas API)
-// Replaces backend OpenCV frame extraction
+// Supports adaptive sampling driven by AudioEnergyData when provided.
 
 class FrameExtractor {
     constructor(opts = {}) {
@@ -12,7 +12,13 @@ class FrameExtractor {
 
     cancel() { this._cancelled = true; }
 
-    async extractFrames(file, onProgress) {
+    /**
+     * Extract frames from a video file.
+     * @param {File} file
+     * @param {(p: object) => void} onProgress
+     * @param {AudioEnergyData} [audioEnergy] — optional, enables adaptive sampling
+     */
+    async extractFrames(file, onProgress, audioEnergy) {
         this._cancelled = false;
         const videoUrl = URL.createObjectURL(file);
 
@@ -31,7 +37,6 @@ class FrameExtractor {
             await new Promise((resolve) => {
                 if (video.readyState >= 3) { resolve(); return; }
                 video.oncanplaythrough = resolve;
-                // Fallback timeout
                 setTimeout(resolve, 3000);
             });
 
@@ -47,7 +52,7 @@ class FrameExtractor {
                 durationFormatted: `${Math.floor(duration / 60)}:${String(Math.floor(duration % 60)).padStart(2, '0')}`,
             };
 
-            // Calculate scale for canvas
+            // Canvas setup
             let canvasW = video.videoWidth;
             let canvasH = video.videoHeight;
             if (canvasW > this.maxWidth) {
@@ -55,48 +60,60 @@ class FrameExtractor {
                 canvasW = this.maxWidth;
                 canvasH = Math.round(canvasH * ratio);
             }
-
             const canvas = document.createElement('canvas');
             canvas.width = canvasW;
             canvas.height = canvasH;
             const ctx = canvas.getContext('2d');
 
-            const totalFrames = Math.min(
-                this.maxFrames,
-                Math.floor(duration / this.intervalSeconds) + 1,
-            );
+            // Build sample timestamps — adaptive or uniform
+            const timestamps = this._buildTimestamps(duration, audioEnergy);
+            const totalFrames = timestamps.length;
+
+            if (audioEnergy && !audioEnergy.isEmpty) {
+                const peaks = audioEnergy.getPeakTimestamps().length;
+                console.log(
+                    `FrameExtractor: adaptive sampling — ${totalFrames} frames ` +
+                    `(${peaks} peak-guided, audio-driven)`,
+                );
+            }
 
             const frames = [];
 
             for (let i = 0; i < totalFrames; i++) {
                 if (this._cancelled) throw new Error('Frame extraction cancelled');
 
-                const timestamp = i * this.intervalSeconds;
-                if (timestamp > duration) break;
+                const timestamp = timestamps[i];
+                if (timestamp >= duration) continue;
 
-                // Seek to timestamp
+                // Seek (with 15s timeout to prevent infinite hang on broken seek)
                 video.currentTime = timestamp;
-                await new Promise((resolve, reject) => {
-                    const onSeeked = () => {
-                        video.removeEventListener('seeked', onSeeked);
-                        video.removeEventListener('error', onError);
-                        resolve();
-                    };
-                    const onError = () => {
-                        video.removeEventListener('seeked', onSeeked);
-                        video.removeEventListener('error', onError);
-                        reject(new Error(`Seek failed at ${timestamp}s`));
-                    };
-                    video.addEventListener('seeked', onSeeked);
-                    video.addEventListener('error', onError);
-                });
+                await Promise.race([
+                    new Promise((resolve, reject) => {
+                        const onSeeked = () => {
+                            video.removeEventListener('seeked', onSeeked);
+                            video.removeEventListener('error', onError);
+                            resolve();
+                        };
+                        const onError = () => {
+                            video.removeEventListener('seeked', onSeeked);
+                            video.removeEventListener('error', onError);
+                            reject(new Error(`Seek failed at ${timestamp}s`));
+                        };
+                        video.addEventListener('seeked', onSeeked);
+                        video.addEventListener('error', onError);
+                    }),
+                    new Promise((_, reject) =>
+                        setTimeout(() => reject(new Error(`Seek timeout at ${timestamp}s`)), 15000)
+                    ),
+                ]);
 
-                // Draw frame to canvas
                 ctx.drawImage(video, 0, 0, canvasW, canvasH);
-
-                // Convert to JPEG blob
-                const blob = await new Promise((resolve) => {
-                    canvas.toBlob(resolve, 'image/jpeg', this.jpegQuality);
+                const blob = await new Promise((resolve, reject) => {
+                    canvas.toBlob(
+                        (b) => b ? resolve(b) : reject(new Error(`toBlob returned null at ${timestamp}s`)),
+                        'image/jpeg',
+                        this.jpegQuality
+                    );
                 });
 
                 frames.push({ timestamp, blob });
@@ -115,5 +132,30 @@ class FrameExtractor {
         } finally {
             URL.revokeObjectURL(videoUrl);
         }
+    }
+
+    // ── Private ──
+
+    _buildTimestamps(duration, audioEnergy) {
+        if (audioEnergy && !audioEnergy.isEmpty) {
+            return audioEnergy.buildSampleTimestamps(duration, {
+                denseSec: 2,
+                sparseSec: 20,
+                maxFrames: this.maxFrames,
+            });
+        }
+
+        // Uniform fallback
+        const total = Math.min(
+            this.maxFrames,
+            Math.floor(duration / this.intervalSeconds) + 1,
+        );
+        const timestamps = [];
+        for (let i = 0; i < total; i++) {
+            const t = i * this.intervalSeconds;
+            if (t > duration) break;
+            timestamps.push(t);
+        }
+        return timestamps;
     }
 }

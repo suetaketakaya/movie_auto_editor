@@ -71,9 +71,48 @@ class VideoEditor:
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(None, self._create_highlight_sync, input_video, clips, output_path)
 
+    def _get_video_duration(self, video_path: str) -> float:
+        """動画の尺を取得する"""
+        try:
+            cmd = [
+                FFPROBE_PATH, "-v", "quiet",
+                "-print_format", "json",
+                "-show_format", video_path,
+            ]
+            result = subprocess.run(cmd, capture_output=True, text=True)
+            if result.returncode == 0:
+                import json as _json
+                data = _json.loads(result.stdout)
+                return float(data.get("format", {}).get("duration", 0))
+        except Exception as e:
+            logger.warning(f"Could not get video duration: {e}")
+        return 0.0
+
     def _create_highlight_sync(self, input_video: str, clips: List[Dict], output_path: str) -> str:
         """同期版のハイライト作成"""
         logger.info(f"Creating highlight video with {len(clips)} clips")
+
+        # 動画の実際の尺を取得してクリップ範囲をバリデート
+        video_duration = self._get_video_duration(input_video)
+        valid_clips = []
+        for clip in clips:
+            start = max(0.0, float(clip["start"]))
+            end = float(clip["end"])
+            if video_duration > 0:
+                end = min(end, video_duration)
+            if end - start >= 0.5:
+                valid_clips.append({**clip, "start": start, "end": end})
+            else:
+                logger.warning(f"Skipping out-of-range clip: {clip['start']:.1f}s-{clip['end']:.1f}s (video={video_duration:.1f}s)")
+
+        if not valid_clips:
+            logger.warning("No valid clips after range validation, copying source video")
+            import shutil as _shutil
+            _shutil.copy2(input_video, output_path)
+            return str(output_path)
+
+        clips = valid_clips
+        logger.info(f"Processing {len(clips)} valid clips (video duration: {video_duration:.1f}s)")
 
         # 一時ファイルリスト
         temp_clips = []
@@ -137,9 +176,9 @@ class VideoEditor:
             "-b:a", "192k",  # オーディオビットレート
         ]
 
-        # FPSを維持
+        # FPSを維持（元動画のFPSをそのまま使用）
         if self.maintain_fps:
-            cmd.extend(["-r", "60"])  # デフォルト60fps（元動画から取得する方が良い）
+            cmd.extend(["-vsync", "vfr"])
 
         cmd.append(str(output))
 

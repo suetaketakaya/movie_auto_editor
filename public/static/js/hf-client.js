@@ -28,6 +28,8 @@ class HuggingFaceVisionClient extends VisionProvider {
         this._allModelsBackoff = 30000;
         this._activeRequests = 0;
         this._lastRequestTime = 0;
+        // Shared across all frames — once a model 404s it stays dead for this session
+        this._unavailableModels = new Set();
     }
 
     async analyzeFrame(frameBlob, timestamp) {
@@ -102,25 +104,47 @@ class HuggingFaceVisionClient extends VisionProvider {
     }
 
     async testConnection() {
-        const model = this._models[0];
-        const url = `${this._baseUrl}/${model}/v1/chat/completions`;
-        // Just verify auth with a minimal request
-        const resp = await fetch(url, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${this._apiKey}`,
-            },
-            body: JSON.stringify({
-                model,
-                messages: [{ role: 'user', content: 'ping' }],
-                max_tokens: 1,
-            }),
-            signal: AbortSignal.timeout(15000),
-        });
-        if (resp.status === 401) throw new Error('Invalid HuggingFace API token');
-        // 429/503 = auth ok, model busy — that's fine for a connection test
-        return true;
+        // Probe every model to find which are actually available
+        const results = await Promise.all(this._models.map(async (model) => {
+            const url = `${this._baseUrl}/${model}/v1/chat/completions`;
+            try {
+                const resp = await fetch(url, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${this._apiKey}`,
+                    },
+                    body: JSON.stringify({
+                        model,
+                        messages: [{ role: 'user', content: 'ping' }],
+                        max_tokens: 1,
+                    }),
+                    signal: AbortSignal.timeout(15000),
+                });
+                if (resp.status === 401) throw new Error('Invalid HuggingFace API token');
+                if (resp.status === 404) return { model, available: false };
+                // 429 / 503 / 200 = endpoint exists, auth ok
+                return { model, available: true };
+            } catch (err) {
+                if (err.message.includes('Invalid HuggingFace API token')) throw err;
+                return { model, available: false };
+            }
+        }));
+
+        const available = results.filter((r) => r.available).map((r) => r.model);
+        const unavailable = results.filter((r) => !r.available).map((r) => r.model);
+
+        // Mark permanently unavailable models so frames skip them immediately
+        unavailable.forEach((m) => this._unavailableModels.add(m));
+
+        if (available.length === 0) {
+            throw new Error(
+                `No HuggingFace models are available on the serverless endpoint.\n` +
+                `Checked: ${this._models.join(', ')}\n` +
+                `All returned 404. Please specify a working Model ID in Settings, or switch to Groq / Gemini.`
+            );
+        }
+        return { available, unavailable };
     }
 
     // --- Internal ---
@@ -159,6 +183,21 @@ class HuggingFaceVisionClient extends VisionProvider {
             if (this._cancelled) throw new Error('Cancelled');
 
             const model = this._getCurrentModel();
+
+            // All models confirmed 404 (shared across frames) — fail fast
+            if (this._unavailableModels.size >= totalModels) {
+                throw new Error(
+                    `All HuggingFace models returned 404 (not available on free serverless inference). ` +
+                    `Please open Settings and either: (1) enter a working Model ID, or (2) switch to Groq or Gemini.`
+                );
+            }
+
+            // Skip this model if already confirmed 404
+            if (this._unavailableModels.has(model)) {
+                this._rotateModel();
+                continue;
+            }
+
             body.model = model;
             const url = `${this._baseUrl}/${model}/v1/chat/completions`;
 
@@ -196,6 +235,7 @@ class HuggingFaceVisionClient extends VisionProvider {
                 }
                 if (resp.status === 404) {
                     console.warn(`[HuggingFace] Model not available on serverless endpoint (404): ${model}, switching model...`);
+                    this._unavailableModels.add(model);
                     this._rotateModel();
                     lastError = new Error(`HuggingFace API error 404: Not Found`);
                     continue;
