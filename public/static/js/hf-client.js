@@ -3,10 +3,10 @@
 
 class HuggingFaceVisionClient extends VisionProvider {
     // Default model list — can be overridden by passing a custom model in settings
-    // Only vision-capable models (text-only models will always fail image analysis)
+    // Only vision-capable models confirmed available on the hf-inference serverless endpoint
     static DEFAULT_MODELS = [
         'meta-llama/Llama-3.2-11B-Vision-Instruct',
-        'Qwen/Qwen2.5-VL-7B-Instruct',
+        'meta-llama/Llama-3.2-90B-Vision-Instruct',
     ];
 
     constructor(apiKey, hfModel) {
