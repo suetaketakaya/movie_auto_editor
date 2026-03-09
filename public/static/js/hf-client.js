@@ -3,9 +3,10 @@
 
 class HuggingFaceVisionClient extends VisionProvider {
     // Default model list — can be overridden by passing a custom model in settings
+    // Only vision-capable models (text-only models will always fail image analysis)
     static DEFAULT_MODELS = [
         'meta-llama/Llama-3.2-11B-Vision-Instruct',
-        'mistralai/Mistral-Small-3.1-24B-Instruct-2503',
+        'Qwen/Qwen2.5-VL-7B-Instruct',
     ];
 
     constructor(apiKey, hfModel) {
@@ -18,7 +19,7 @@ class HuggingFaceVisionClient extends VisionProvider {
             ? [customModel, ...HuggingFaceVisionClient.DEFAULT_MODELS.filter((m) => m !== customModel)]
             : [...HuggingFaceVisionClient.DEFAULT_MODELS];
         this._currentModelIndex = 0;
-        this._baseUrl = 'https://router.huggingface.co/api/inference-endpoints/models';
+        this._baseUrl = 'https://router.huggingface.co/hf-inference/models';
         this._maxRetries = 3;
         this._initialBackoff = 2000;
         this._concurrency = 1;
