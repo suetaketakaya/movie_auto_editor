@@ -3,10 +3,12 @@
 
 class HuggingFaceVisionClient extends VisionProvider {
     // Default model list — can be overridden by passing a custom model in settings
-    // Only vision-capable models confirmed available on the hf-inference serverless endpoint
+    // Vision-capable models available via the HuggingFace unified router (auto-selects provider)
     static DEFAULT_MODELS = [
+        'meta-llama/Llama-4-Scout-17B-16E-Instruct',
+        'Qwen/Qwen2.5-VL-7B-Instruct',
+        'Qwen/Qwen3-VL-8B-Instruct',
         'meta-llama/Llama-3.2-11B-Vision-Instruct',
-        'meta-llama/Llama-3.2-90B-Vision-Instruct',
     ];
 
     constructor(apiKey, hfModel) {
@@ -19,7 +21,9 @@ class HuggingFaceVisionClient extends VisionProvider {
             ? [customModel, ...HuggingFaceVisionClient.DEFAULT_MODELS.filter((m) => m !== customModel)]
             : [...HuggingFaceVisionClient.DEFAULT_MODELS];
         this._currentModelIndex = 0;
-        this._baseUrl = 'https://router.huggingface.co/hf-inference/models';
+        // Unified router: auto-selects the best available provider for each model
+        // (Previously used /hf-inference/models/{model}/ which is provider-specific)
+        this._baseUrl = 'https://router.huggingface.co/v1/chat/completions';
         this._maxRetries = 3;
         this._initialBackoff = 2000;
         this._concurrency = 1;
@@ -105,11 +109,10 @@ class HuggingFaceVisionClient extends VisionProvider {
     }
 
     async testConnection() {
-        // Probe every model to find which are actually available
+        // Probe every model to find which are actually available via the unified router
         const results = await Promise.all(this._models.map(async (model) => {
-            const url = `${this._baseUrl}/${model}/v1/chat/completions`;
             try {
-                const resp = await fetch(url, {
+                const resp = await fetch(this._baseUrl, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -124,7 +127,7 @@ class HuggingFaceVisionClient extends VisionProvider {
                 });
                 if (resp.status === 401) throw new Error('Invalid HuggingFace API token');
                 if (resp.status === 404) return { model, available: false };
-                // 429 / 503 / 200 = endpoint exists, auth ok
+                // 200 / 429 / 503 = router found a provider for this model
                 return { model, available: true };
             } catch (err) {
                 if (err.message.includes('Invalid HuggingFace API token')) throw err;
@@ -200,10 +203,9 @@ class HuggingFaceVisionClient extends VisionProvider {
             }
 
             body.model = model;
-            const url = `${this._baseUrl}/${model}/v1/chat/completions`;
 
             try {
-                const resp = await fetch(url, {
+                const resp = await fetch(this._baseUrl, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
